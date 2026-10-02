@@ -64,9 +64,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val text = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
         if (text.isNotBlank()) binding.etUrl.setText(text)
     }
 

@@ -22,7 +22,8 @@ object BaiduParser {
         if (clarity != null) {
             for (i in 0 until clarity.length()) {
                 val item = clarity.optJSONObject(i) ?: continue
-                val url = item.optString("url").ifBlank { continue }
+                val url = item.optString("url")
+                if (url.isBlank()) continue
                 val size = item.optString("videoSize").toDoubleOrNull() ?: 0.0
                 choices += Choice(url, size)
             }
