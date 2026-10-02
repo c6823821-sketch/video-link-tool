@@ -30,19 +30,23 @@
         android:layout_marginTop="12dp"
         android:layout_weight="1" />
 
-    <com.google.android.material.button.MaterialButton
+    <Button
         android:id="@+id/btnSaveCookie"
         android:layout_width="match_parent"
         android:layout_height="52dp"
         android:layout_marginTop="12dp"
         android:backgroundTint="@color/brand"
-        android:text="保存验证状态" />
+        android:text="保存验证状态"
+        android:textAllCaps="false"
+        android:textColor="@android:color/white" />
 
-    <com.google.android.material.button.MaterialButton
+    <Button
         android:id="@+id/btnCancelCookie"
-        style="?attr/materialButtonOutlinedStyle"
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:layout_marginTop="8dp"
-        android:text="取消" />
+        android:backgroundTint="@android:color/transparent"
+        android:text="取消"
+        android:textAllCaps="false"
+        android:textColor="@color/brand" />
 </LinearLayout>

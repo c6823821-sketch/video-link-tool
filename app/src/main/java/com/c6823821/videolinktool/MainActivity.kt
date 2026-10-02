@@ -32,8 +32,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnModeVideo.isChecked = true
         updateMode(TaskMode.VIDEO)
 
-        binding.modeGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
+        binding.modeGroup.setOnCheckedChangeListener { _, checkedId ->
             val mode = when (checkedId) {
                 binding.btnModeAudio.id -> TaskMode.AUDIO
                 binding.btnModeText.id -> TaskMode.TEXT
