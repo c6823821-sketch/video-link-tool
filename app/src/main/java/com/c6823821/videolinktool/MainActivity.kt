@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingInstall: java.io.File? = null
     private val modeStates = mutableMapOf<TaskMode, TaskUiState>()
     private var displayedState = TaskUiState()
+    private var previewKey: String? = null
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -127,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         val canOpen = succeeded && state.mode != TaskMode.TEXT &&
             (!state.outputUri.isNullOrBlank() || !state.outputPath.isNullOrBlank())
         binding.btnOpenResult.visibility = if (canOpen) android.view.View.VISIBLE else android.view.View.GONE
+        updatePreview(state)
         binding.btnOpenResult.text = when (state.mode) {
             TaskMode.AUDIO -> "在这个页面打开这段音频"
             TaskMode.VIDEO -> "在这个页面打开这个视频/图集"
@@ -134,6 +136,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updatePreview(state: TaskUiState) {
+        val uriText = state.previewUri
+        if (state.state != RunState.SUCCESS || uriText.isNullOrBlank()) {
+            if (binding.cardPreview.visibility == android.view.View.VISIBLE) {
+                runCatching { binding.videoPreview.stopPlayback() }
+            }
+            binding.cardPreview.visibility = android.view.View.GONE
+            previewKey = null
+            return
+        }
+        binding.cardPreview.visibility = android.view.View.VISIBLE
+        if (previewKey == uriText) return
+        previewKey = uriText
+        val uri = if (uriText.startsWith("content://")) {
+            Uri.parse(uriText)
+        } else {
+            runCatching { OutputStore.legacyUri(this, uriText) }.getOrNull()
+        }
+        if (uri == null) {
+            binding.cardPreview.visibility = android.view.View.GONE
+            return
+        }
+        val controller = android.widget.MediaController(this)
+        controller.setAnchorView(binding.videoPreview)
+        binding.videoPreview.setMediaController(controller)
+        binding.videoPreview.setOnPreparedListener { player ->
+            player.isLooping = false
+            binding.tvPreviewHint.text = "预览"
+            runCatching { binding.videoPreview.start() }
+        }
+        binding.videoPreview.setOnErrorListener { _, _, _ ->
+            binding.cardPreview.visibility = android.view.View.GONE
+            Toast.makeText(this, "这个文件没法在页面里播放，可以点下面的按钮打开", Toast.LENGTH_LONG).show()
+            true
+        }
+        binding.videoPreview.setVideoURI(uri)
+    }
     private fun checkForUpdate(manual: Boolean) {
         lifecycleScope.launch(Dispatchers.IO) {
             val info = runCatching { UpdateManager.check(this@MainActivity) }.getOrNull()

@@ -234,6 +234,31 @@
                 android:textColor="@android:color/white"
                 android:textSize="14sp" />
         </LinearLayout>
+        <LinearLayout
+            android:id="@+id/cardPreview"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="10dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvPreviewHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="6dp"
+                android:text="预览（已自动播放）"
+                android:textColor="@color/ink"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <VideoView
+                android:id="@+id/videoPreview"
+                android:layout_width="match_parent"
+                android:layout_height="230dp" />
+        </LinearLayout>
         <Button
             android:id="@+id/btnOpenResult"
             android:layout_width="match_parent"

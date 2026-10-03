@@ -31,6 +31,7 @@ object TaskRunner {
             detail = "已保存到系统下载目录：" + saved.displayName,
             outputUri = saved.uri?.toString() ?: saved.path,
             outputPath = saved.path,
+            previewUri = saved.uri?.toString() ?: saved.path,
         )
     }
 

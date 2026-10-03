@@ -13,6 +13,7 @@ data class TaskUiState(
     val outputUri: String? = null,
     val outputPath: String? = null,
     val text: String? = null,
+    val previewUri: String? = null,
 )
 
 object TaskBus {
@@ -31,6 +32,7 @@ object TaskBus {
         outputUri: String? = null,
         outputPath: String? = null,
         text: String? = null,
+        previewUri: String? = null,
     ) {
         state.value = TaskUiState(
             mode = mode,
@@ -41,6 +43,7 @@ object TaskBus {
             outputUri = outputUri,
             outputPath = outputPath,
             text = text,
+            previewUri = previewUri,
         )
     }
 }

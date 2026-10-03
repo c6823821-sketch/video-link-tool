@@ -19,8 +19,8 @@ android {
         applicationId = "com.c6823821.videolinktool.v3"
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = "1.5.2"
+        versionCode = 23
+        versionName = "1.6.0"
 
         ndk {
             // Default build ships both ABIs. "-PabiFilter=arm64" builds the smaller
@@ -71,6 +71,9 @@ android {
     }
 
 
+    androidResources {
+        noCompress += "onnx"
+    }
     buildFeatures {
         viewBinding = true
     }
@@ -85,7 +88,6 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
-    implementation("com.alphacephei:vosk-android:0.3.47")
 }
 
 
