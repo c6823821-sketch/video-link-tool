@@ -1,3 +1,11 @@
+import java.util.Properties
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,11 +16,11 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.c6823821.videolinktool"
+        applicationId = "com.c6823821.videolinktool.v2"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 6
+        versionName = "1.3.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -28,10 +36,21 @@ android {
         }
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

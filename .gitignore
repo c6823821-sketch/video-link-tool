@@ -11,3 +11,5 @@ captures/
 *.aab
 release/
 app/src/main/assets/sensevoice/
+keystore.properties
+keystore/
