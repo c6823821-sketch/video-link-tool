@@ -20,6 +20,11 @@ import java.io.InputStream
 object AsrEngine {
     private data class Word(val text: String, val start: Double, val end: Double)
 
+    private const val SENTENCE_GAP = 0.42
+    private const val CLAUSE_GAP = 0.15
+    private const val MIN_CLAUSE = 4
+    private const val MAX_CLAUSE = 40
+
     fun transcribe(
         context: Context,
         wavPath: String,
@@ -108,8 +113,18 @@ object AsrEngine {
         "为什么", "什么", "怎么", "哪儿", "哪里", "哪个", "哪些", "多少", "几个", "几点",
         "多久", "多大", "能不能", "是不是", "有没有", "谁",
     )
+    private val clauseStarters = listOf(
+        "但是", "不过", "所以", "因为", "同时", "并且", "然后", "如果", "虽然", "只要",
+        "由于", "因此", "于是", "另外", "以及", "而且", "相关", "目前", "现在", "长期",
+        "最后", "而",
+    )
 
-    /** Turns a timestamped word stream into readable sentences with punctuation. */
+    /**
+     * The Chinese model emits bare words with per-word timestamps and no punctuation at all.
+     * We rebuild sentences from the silence between words: long gaps end a sentence, medium
+     * gaps add a comma. Continuous narration has almost no silence, so a long clause also
+     * gets a comma as soon as a clause-opening word shows up.
+     */
     private fun punctuate(words: List<Word>): String {
         val output = StringBuilder()
         val current = StringBuilder()
@@ -117,10 +132,10 @@ object AsrEngine {
         words.forEachIndexed { index, word ->
             if (index > 0) {
                 val gap = if (word.start >= 0 && previousEnd >= 0) word.start - previousEnd else 0.0
-                if (gap >= 0.65 && current.isNotEmpty()) {
+                if (gap >= SENTENCE_GAP && current.isNotEmpty()) {
                     output.append(current).append(endingMark(current.toString()))
                     current.setLength(0)
-                } else if (gap >= 0.26 && current.isNotEmpty()) {
+                } else if (gap >= CLAUSE_GAP && pendingLength(current) >= MIN_CLAUSE) {
                     val mark = clauseMark(current.toString())
                     if (mark == '，') {
                         current.append('，')
@@ -129,6 +144,12 @@ object AsrEngine {
                         current.setLength(0)
                     }
                 }
+            }
+            if (pendingLength(current) >= MAX_CLAUSE &&
+                !endsWithPunctuation(current) &&
+                clauseStarters.any { word.text.startsWith(it) }
+            ) {
+                current.append('，')
             }
             appendWord(current, word.text)
             if (word.end >= 0) previousEnd = word.end
@@ -139,27 +160,36 @@ object AsrEngine {
         return output.toString()
     }
 
-    private fun clauseMark(sentence: String): Char {
-        if (questionTails.any { sentence.endsWith(it) }) return '？'
-        if (exclaimTails.any { sentence.endsWith(it) }) return '！'
-        return '，'
+    private fun clauseMark(sentence: String): Char = when {
+        endsQuestion(sentence) -> '？'
+        endsExclaim(sentence) -> '！'
+        else -> '，'
     }
 
     private fun endingMark(sentence: String): Char {
         val tail = sentence.takeLast(8)
-        if (questionTails.any { sentence.endsWith(it) } ||
-            questionWords.any { tail.contains(it) }
-        ) {
-            return '？'
-        }
-        if (exclaimTails.any { sentence.endsWith(it) } ||
-            (tail.contains("太") && sentence.endsWith("了"))
-        ) {
-            return '！'
-        }
+        if (endsQuestion(sentence) || questionWords.any { tail.contains(it) }) return '？'
+        if (endsExclaim(sentence)) return '！'
         return '。'
     }
 
+    private fun endsQuestion(sentence: String): Boolean =
+        questionTails.any { sentence.endsWith(it) }
+
+    private fun endsExclaim(sentence: String): Boolean =
+        exclaimTails.any { sentence.endsWith(it) } ||
+            (sentence.takeLast(8).contains("太") && sentence.endsWith("了"))
+
+    private fun endsWithPunctuation(builder: StringBuilder): Boolean =
+        builder.isNotEmpty() && builder.last() in "。？！，"
+
+    /** Characters typed since the last punctuation mark. */
+    private fun pendingLength(builder: StringBuilder): Int {
+        for (index in builder.length - 1 downTo 0) {
+            if (builder[index] in "。？！，") return builder.length - 1 - index
+        }
+        return builder.length
+    }
     private fun appendWord(builder: StringBuilder, word: String) {
         if (builder.isEmpty()) {
             builder.append(word)

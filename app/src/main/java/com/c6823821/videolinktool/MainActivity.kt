@@ -26,6 +26,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var currentMode = TaskMode.VIDEO
     private var pendingInstall: java.io.File? = null
+    private val modeStates = mutableMapOf<TaskMode, TaskUiState>()
+    private var displayedState = TaskUiState()
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -95,7 +97,9 @@ class MainActivity : AppCompatActivity() {
             TaskMode.TEXT -> "只输出文字，结果显示在下方框里，不自动保存。模型内置，不用下载。"
         }
         binding.tvModeHint.text = hint
-        if (TaskBus.state.value.state != RunState.RUNNING) TaskBus.reset(mode)
+        if (TaskBus.state.value.state != RunState.RUNNING) {
+            render(modeStates[mode] ?: TaskUiState(mode = mode))
+        }
         binding.btnRun.text = when (mode) {
             TaskMode.VIDEO -> "开始下载视频"
             TaskMode.AUDIO -> "开始提取音频"
@@ -104,6 +108,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun render(state: TaskUiState) {
+        displayedState = state
+        modeStates[state.mode] = state
         binding.progressBar.progress = state.progress
         binding.tvProgressPercent.text = state.progress.toString() + "%"
         binding.tvStatus.text = state.title
@@ -244,14 +250,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun copyResultText() {
-        val text = TaskBus.state.value.text.orEmpty()
+        val text = displayedState.text.orEmpty()
         if (text.isBlank()) return
         val clipboard = getSystemService(ClipboardManager::class.java) ?: return
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("识别结果", text))
         Toast.makeText(this, "文字已复制", Toast.LENGTH_SHORT).show()
     }
     private fun openResult() {
-        val state = TaskBus.state.value
+        val state = displayedState
         val uriText = state.outputUri
         val path = state.outputPath
         val mime = when (state.mode) {
