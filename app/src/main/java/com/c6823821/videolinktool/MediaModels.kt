@@ -1,14 +1,20 @@
 package com.c6823821.videolinktool
 
+data class ImageItem(
+    val url: String,
+    val ext: String = "jpg",
+)
+
 data class DirectMedia(
     val title: String,
-    val url: String,
+    val url: String = "",
     val headers: Map<String, String> = emptyMap(),
     val ext: String = "mp4",
-    val site: String = "??",
+    val site: String = "平台",
+    val images: List<ImageItem> = emptyList(),
 )
 
 sealed class ResolvedSource {
     data class Direct(val media: DirectMedia) : ResolvedSource()
-    data class YoutubeDl(val titleHint: String? = null, val site: String = "??") : ResolvedSource()
+    data class YoutubeDl(val titleHint: String? = null, val site: String = "通用") : ResolvedSource()
 }

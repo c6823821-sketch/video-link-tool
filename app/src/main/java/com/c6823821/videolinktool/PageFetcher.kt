@@ -5,10 +5,10 @@ import okhttp3.Request
 object PageFetcher {
     data class Page(val finalUrl: String, val html: String)
 
-    fun fetch(url: String, referer: String = "", headers: Map<String, String> = emptyMap()): Page {
+    fun fetch(url: String, referer: String = "", headers: Map<String, String> = emptyMap(), userAgent: String = HttpClient.MOBILE_UA): Page {
         val builder = Request.Builder()
             .url(url)
-            .header("User-Agent", HttpClient.MOBILE_UA)
+            .header("User-Agent", userAgent)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         if (referer.isNotBlank()) builder.header("Referer", referer)
         headers.forEach { (key, value) -> builder.header(key, value) }

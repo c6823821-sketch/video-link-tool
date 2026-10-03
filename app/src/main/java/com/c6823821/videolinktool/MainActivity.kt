@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -41,6 +42,18 @@ class MainActivity : AppCompatActivity() {
             updateMode(mode)
         }
 
+        binding.etUrl.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                val drawable = binding.etUrl.compoundDrawables[2]
+                if (drawable != null && event.x >= binding.etUrl.width - binding.etUrl.paddingEnd - drawable.bounds.width()) {
+                    binding.etUrl.text?.clear()
+                    binding.etUrl.performClick()
+                    return@setOnTouchListener true
+                }
+            }
+            false
+        }
+
         binding.btnRun.setOnClickListener {
             val input = binding.etUrl.text?.toString()?.trim().orEmpty()
             if (input.isBlank()) {
@@ -51,9 +64,6 @@ class MainActivity : AppCompatActivity() {
             TaskService.start(this, currentMode, input)
         }
 
-        binding.btnDouyinCookie.setOnClickListener {
-            startActivity(Intent(this, CookieActivity::class.java))
-        }
 
         binding.btnOpenResult.setOnClickListener { openResult() }
 

@@ -80,6 +80,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:background="@drawable/bg_input"
+            android:drawableEnd="@android:drawable/ic_menu_close_clear_cancel"
+            android:drawableTint="@color/muted"
+            android:drawablePadding="8dp"
             android:gravity="top|start"
             android:hint="@string/hint_url"
             android:inputType="textUri|textMultiLine"
@@ -126,7 +129,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="一次处理一个链接。完成后会在“下载/视频工具箱”里看到文件。"
+            android:text="一次处理一个链接。完成后会在系统“下载”目录看到文件。"
             android:textColor="@color/muted"
             android:textSize="13sp" />
 
@@ -141,15 +144,6 @@
             android:textColor="@color/brand"
             android:visibility="gone" />
 
-        <Button
-            android:id="@+id/btnDouyinCookie"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="12dp"
-            android:backgroundTint="@android:color/transparent"
-            android:text="@string/refresh_douyin"
-            android:textAllCaps="false"
-            android:textColor="@color/brand" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -170,7 +164,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="抖音首次使用可能需要刷新一次验证。快手图集暂不支持，视频作品支持。小红书只支持视频笔记。"
+                android:text="抖音、快手、小红书现在走无登录解析；图集会按图片保存，视频会按视频保存。"
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
 

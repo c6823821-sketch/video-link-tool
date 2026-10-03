@@ -28,9 +28,22 @@ object TaskRunner {
             stateValue = RunState.SUCCESS,
             progress = 100,
             title = label,
-            detail = "已保存到：下载/视频工具箱/" + saved.displayName,
+            detail = "已保存到系统下载目录：" + saved.displayName,
             outputUri = saved.uri?.toString() ?: saved.path,
             outputPath = saved.path,
+        )
+    }
+
+    private fun completeGallery(saved: List<OutputStore.Saved>) {
+        if (saved.isEmpty()) throw IllegalStateException("图集没有保存成功")
+        TaskBus.update(
+            mode = TaskMode.VIDEO,
+            stateValue = RunState.SUCCESS,
+            progress = 100,
+            title = "图集已保存",
+            detail = "已保存 " + saved.size + " 张图片到系统下载目录",
+            outputUri = saved.first().uri?.toString() ?: saved.first().path,
+            outputPath = saved.first().path,
         )
     }
 
@@ -40,8 +53,17 @@ object TaskRunner {
         media: DirectMedia,
         onProgress: (Int, String) -> Unit,
     ) {
+        if (media.images.isNotEmpty()) {
+            if (mode != TaskMode.VIDEO) {
+                throw IllegalStateException("这是图集，没有音频。请选择“下视频”来保存图片。")
+            }
+            downloadGallery(context, media, onProgress)
+            return
+        }
+
         when (mode) {
             TaskMode.VIDEO -> {
+                if (media.url.isBlank()) throw IllegalStateException("没有找到可下载的视频地址")
                 val temp = File(context.cacheDir, "video_link_tool_" + System.currentTimeMillis() + "." + media.ext)
                 Downloader.download(media.url, media.headers, temp) { percent ->
                     onProgress(percent, "正在下载无水印视频...")
@@ -50,6 +72,7 @@ object TaskRunner {
                 complete(mode, saved)
             }
             TaskMode.AUDIO -> {
+                if (media.url.isBlank()) throw IllegalStateException("没有找到可提取的音频")
                 val result = YoutubeDlEngine.download(
                     context = context,
                     url = media.url,
@@ -62,6 +85,7 @@ object TaskRunner {
                 complete(mode, saved)
             }
             TaskMode.TEXT -> {
+                if (media.url.isBlank()) throw IllegalStateException("没有找到可转写的音频")
                 val result = YoutubeDlEngine.download(
                     context = context,
                     url = media.url,
@@ -79,6 +103,24 @@ object TaskRunner {
         }
     }
 
+    private fun downloadGallery(
+        context: Context,
+        media: DirectMedia,
+        onProgress: (Int, String) -> Unit,
+    ) {
+        val tempFiles = mutableListOf<File>()
+        media.images.forEachIndexed { index, item ->
+            val temp = File(context.cacheDir, "video_link_tool_" + System.currentTimeMillis() + "_" + index + "." + item.ext)
+            Downloader.download(item.url, media.headers, temp) { p ->
+                val overall = ((index * 100 + p) / media.images.size).coerceIn(0, 100)
+                onProgress(overall, "正在保存图集 " + (index + 1) + "/" + media.images.size + "...")
+            }
+            tempFiles += temp
+        }
+        val saved = OutputStore.saveGallery(context, tempFiles, media.title)
+        completeGallery(saved)
+    }
+
     private fun runYoutubeDl(
         context: Context,
         mode: TaskMode,
@@ -87,18 +129,11 @@ object TaskRunner {
         onProgress: (Int, String) -> Unit,
     ) {
         val url = LinkExtractor.extract(rawInput) ?: throw IllegalArgumentException("没有识别到链接")
-        val host = LinkExtractor.host(url)
-        val cookieFile = if (host.contains("douyin") || host.contains("iesdouyin")) {
-            CookieStore.file(context).absolutePath
-        } else {
-            null
-        }
         val result = YoutubeDlEngine.download(
             context = context,
             url = url,
             mode = mode,
             titleHint = source.titleHint,
-            cookieFile = cookieFile,
             onProgress = { p, text ->
                 if (mode == TaskMode.TEXT) onProgress((p * 75) / 100, text) else onProgress(p, text)
             },

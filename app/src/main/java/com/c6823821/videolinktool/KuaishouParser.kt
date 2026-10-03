@@ -1,36 +1,87 @@
 package com.c6823821.videolinktool
 
+import okhttp3.Request
+import org.json.JSONObject
+
 object KuaishouParser {
-    private val urlRegex = Regex("\"url\":\"(https?[^\"]+?\\.mp4(?:\\?[^\"]*)?)\"", RegexOption.DOT_MATCHES_ALL)
-    private val captionRegex = Regex("\"caption\":\"(.*?)\"")
-    private val codecRegex = Regex("\"videoCodec\":\"([^\"]+)\"")
-    private val sizeRegex = Regex("\"fileSize\":(\\d+)")
+    private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+    private val initRegex = Regex("window\\.INIT_STATE\\s*=\\s*(\\{.*?\\})\\s*</script>", RegexOption.DOT_MATCHES_ALL)
 
-    fun parse(finalUrl: String): DirectMedia {
-        val page = PageFetcher.fetch(finalUrl, referer = "https://v.kuaishou.com/")
-        val html = page.html
-        val title = JsonText.first(captionRegex, html)?.ifBlank { null } ?: "快手视频"
+    fun parse(url: String): DirectMedia {
+        val html = fetchWithCookies(url)
+        val raw = initRegex.find(html)?.groupValues?.getOrNull(1)
+            ?: throw IllegalStateException("快手页面里没有 INIT_STATE")
+        val state = JSONObject(raw)
+        val normalized = JSONObject()
+        for (key in state.keys()) normalized.put(shiftKey(key), state.get(key))
 
-        data class Candidate(val url: String, val codec: String, val fileSize: Long)
-        val candidates = urlRegex.findAll(html).map { match ->
-            val windowStart = (match.range.first - 2500).coerceAtLeast(0)
-            val windowEnd = (match.range.last + 1800).coerceAtMost(html.length)
-            val window = html.substring(windowStart, windowEnd)
-            val codec = codecRegex.find(window)?.groupValues?.getOrNull(1) ?: ""
-            val size = sizeRegex.find(window)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
-            Candidate(JsonText.decode(match.groupValues[1]), codec.lowercase(), size)
-        }.filter { it.url.startsWith("http") }.toList()
-
-        if (candidates.isEmpty()) {
-            throw IllegalStateException("快手作品里没有找到视频文件。图集作品暂不支持。")
+        var entry: JSONObject? = null
+        val keyIterator = normalized.keys()
+        while (keyIterator.hasNext()) {
+            val candidate = normalized.optJSONObject(keyIterator.next())
+            if (candidate != null && candidate.has("result") && candidate.has("photo")) {
+                entry = candidate
+                break
+            }
         }
-        val preferred = candidates.filter { it.codec == "avc" || it.codec == "h264" }
-        val chosen = (preferred.ifEmpty { candidates }).maxByOrNull { it.fileSize } ?: candidates.first()
+        val workEntry = entry ?: throw IllegalStateException("快手页面里没有作品数据")
+        if (workEntry.optInt("result", 0) != 1) throw IllegalStateException("快手作品不可用")
+        val photo = workEntry.optJSONObject("photo") ?: throw IllegalStateException("快手作品数据为空")
+
+        val images = mutableListOf<ImageItem>()
+        val atlas = photo.optJSONObject("ext_params")?.optJSONObject("atlas")
+        val list = atlas?.optJSONArray("list")
+        val cdns = atlas?.optJSONArray("cdn")
+        if (list != null && cdns != null && list.length() > 0 && cdns.length() > 0) {
+            val cdn = cdns.optString(0)
+            for (i in 0 until list.length()) {
+                val path = list.optString(i)
+                if (path.isNotBlank() && cdn.isNotBlank()) images += ImageItem("https://$cdn/$path")
+            }
+        }
+
+        var videoUrl = ""
+        if (images.isEmpty()) {
+            videoUrl = photo.optJSONArray("mainMvUrls")?.optJSONObject(0)?.optString("url").orEmpty()
+            if (videoUrl.isBlank()) {
+                val reps = photo.optJSONObject("manifest")?.optJSONArray("adaptationSet")
+                    ?.optJSONObject(0)?.optJSONArray("representation")
+                videoUrl = reps?.optJSONObject(0)?.optString("url").orEmpty()
+            }
+        }
+        if (videoUrl.isBlank() && images.isEmpty()) throw IllegalStateException("快手作品没有可下载资源")
         return DirectMedia(
-            title = title,
-            url = chosen.url,
-            headers = mapOf("Referer" to "https://v.kuaishou.com/"),
+            title = photo.optString("caption", "快手作品"),
+            url = videoUrl,
+            headers = mapOf("Referer" to "https://v.kuaishou.com/", "User-Agent" to UA),
             site = "快手",
+            images = images,
         )
+    }
+
+    private fun fetchWithCookies(url: String): String {
+        val noFollow = HttpClient.client.newBuilder().followRedirects(false).followSslRedirects(false).build()
+        val firstRequest = Request.Builder().url(url).header("User-Agent", UA)
+            .header("Referer", "https://v.kuaishou.com/").get().build()
+        val first = noFollow.newCall(firstRequest).execute()
+        val location = first.header("Location")
+        val cookies = first.headers.values("Set-Cookie").mapNotNull { it.substringBefore(';').takeIf { c -> c.contains('=') } }
+        first.close()
+        val finalUrl = when {
+            location.isNullOrBlank() -> url
+            location.startsWith("http") -> location
+            else -> firstRequest.url.resolve(location).toString()
+        }.replace("/fw/long-video/", "/fw/photo/")
+        val finalBuilder = Request.Builder().url(finalUrl).header("User-Agent", UA)
+            .header("Referer", "https://v.kuaishou.com/")
+        if (cookies.isNotEmpty()) finalBuilder.header("Cookie", cookies.joinToString("; "))
+        return HttpClient.client.newCall(finalBuilder.get().build()).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("快手页面请求失败：HTTP " + response.code)
+            response.body?.string().orEmpty()
+        }
+    }
+
+    private fun shiftKey(key: String): String = buildString {
+        key.forEach { append((it.code - 1).toChar()) }
     }
 }

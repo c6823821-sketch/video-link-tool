@@ -8,15 +8,19 @@ object MediaResolver {
         val finalUrl = runCatching { PageFetcher.follow(original) }.getOrDefault(original)
         val host = LinkExtractor.host(finalUrl)
         return when {
-            host.contains("douyin") || host.contains("iesdouyin") -> {
-                if (!CookieStore.hasDouyinCookies(context)) throw NeedCookiesException()
-                ResolvedSource.YoutubeDl(site = "抖音")
-            }
-            host.contains("kuaishou") || host.contains("chenzhongtech") -> ResolvedSource.Direct(KuaishouParser.parse(finalUrl))
-            host.contains("xiaohongshu") || host.contains("xhslink") -> ResolvedSource.Direct(XhsParser.parse(finalUrl))
-            host.contains("baidu") || host.contains("mbd.baidu") || host.contains("mr.baidu") -> ResolvedSource.Direct(BaiduParser.parse(finalUrl))
-            host.contains("bilibili") -> ResolvedSource.YoutubeDl(site = "哔哩哔哩")
-            host.contains("toutiao") || host.contains("ixigua") -> ResolvedSource.YoutubeDl(site = "今日头条")
+            host.contains("douyin") || host.contains("iesdouyin") ->
+                ResolvedSource.Direct(DouyinParser.parse(finalUrl))
+            host.contains("kuaishou") || host.contains("chenzhongtech") ->
+                ResolvedSource.Direct(KuaishouParser.parse(original))
+            host.contains("xiaohongshu") || host.contains("xhslink") ->
+                ResolvedSource.Direct(XhsParser.parse(finalUrl))
+            host.contains("baidu") || host.contains("mbd.baidu") || host.contains("mr.baidu") ->
+                ResolvedSource.Direct(BaiduParser.parse(finalUrl))
+            host.contains("bilibili") ->
+                runCatching { ResolvedSource.Direct(BilibiliParser.parse(finalUrl)) }
+                    .getOrElse { ResolvedSource.YoutubeDl(site = "哔哩哔哩") }
+            host.contains("toutiao") || host.contains("ixigua") ->
+                ResolvedSource.YoutubeDl(site = "今日头条")
             else -> ResolvedSource.YoutubeDl()
         }
     }

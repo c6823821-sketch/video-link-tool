@@ -9,7 +9,7 @@ data class TaskUiState(
     val state: RunState = RunState.IDLE,
     val progress: Int = 0,
     val title: String = "就绪",
-    val detail: String = "一次处理一个链接。完成后会在“下载/视频工具箱”里看到文件。",
+    val detail: String = "一次处理一个链接。完成后会在系统“下载”目录看到文件。",
     val outputUri: String? = null,
     val outputPath: String? = null,
 )
