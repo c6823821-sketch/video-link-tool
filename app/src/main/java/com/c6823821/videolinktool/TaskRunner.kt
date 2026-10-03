@@ -34,6 +34,17 @@ object TaskRunner {
         )
     }
 
+    /** Transcription is shown in the app itself; nothing is written to Downloads. */
+    private fun completeText(text: String) {
+        TaskBus.update(
+            mode = TaskMode.TEXT,
+            stateValue = RunState.SUCCESS,
+            progress = 100,
+            title = "识别完成",
+            detail = "文字在下方框里，可长按选择或点“复制文字”。",
+            text = text,
+        )
+    }
     private fun completeGallery(saved: List<OutputStore.Saved>) {
         if (saved.isEmpty()) throw IllegalStateException("图集没有保存成功")
         TaskBus.update(
@@ -100,11 +111,10 @@ object TaskRunner {
                     titleHint = media.title,
                     onProgress = { p, text -> onProgress((p * 75) / 100, text) },
                 )
-                val text = AsrEngine.transcribe(context, result.file.absolutePath) { p, text ->
-                    onProgress(75 + (p * 25) / 100, text)
+                val text = AsrEngine.transcribe(context, result.file.absolutePath) { p, detail ->
+                    onProgress(75 + (p * 25) / 100, detail)
                 }
-                val saved = OutputStore.saveText(context, text, result.title)
-                complete(mode, saved)
+                completeText(text)
             }
         }
     }
@@ -147,11 +157,10 @@ object TaskRunner {
         )
         if (mode == TaskMode.VIDEO) MediaCache.save(context, url, result.file)
         if (mode == TaskMode.TEXT) {
-            val text = AsrEngine.transcribe(context, result.file.absolutePath) { p, text ->
-                onProgress(75 + (p * 25) / 100, text)
+            val text = AsrEngine.transcribe(context, result.file.absolutePath) { p, detail ->
+                onProgress(75 + (p * 25) / 100, detail)
             }
-            val saved = OutputStore.saveText(context, text, result.title)
-            complete(mode, saved)
+            completeText(text)
         } else {
             val mime = if (mode == TaskMode.VIDEO) "video/mp4" else "audio/mp4"
             val saved = OutputStore.saveFile(context, result.file, result.title, mime)

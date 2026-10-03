@@ -1,4 +1,4 @@
-﻿package com.c6823821.videolinktool
+package com.c6823821.videolinktool
 
 import android.Manifest
 import android.content.ClipboardManager
@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity() {
 
 
         binding.btnOpenResult.setOnClickListener { openResult() }
+        binding.btnCopyResult.setOnClickListener { copyResultText() }
 
         binding.btnCheckUpdate.setOnClickListener { checkForUpdate(true) }
         checkForUpdate(false)
@@ -91,9 +92,10 @@ class MainActivity : AppCompatActivity() {
         val hint = when (mode) {
             TaskMode.VIDEO -> "只下载无水印视频源文件，不提取音频。"
             TaskMode.AUDIO -> "只提取音频，不保存整段视频。"
-            TaskMode.TEXT -> "只输出文字。首次使用会初始化内置语音模型，不需要下载。"
+            TaskMode.TEXT -> "只输出文字，结果显示在下方框里，不自动保存。模型内置，不用下载。"
         }
         binding.tvModeHint.text = hint
+        if (TaskBus.state.value.state != RunState.RUNNING) TaskBus.reset(mode)
         binding.btnRun.text = when (mode) {
             TaskMode.VIDEO -> "开始下载视频"
             TaskMode.AUDIO -> "开始提取音频"
@@ -110,7 +112,20 @@ class MainActivity : AppCompatActivity() {
         binding.progressBar.visibility = if (running) android.view.View.VISIBLE else android.view.View.GONE
         binding.tvProgressPercent.visibility = if (running) android.view.View.VISIBLE else android.view.View.GONE
         binding.btnRun.isEnabled = !running
-        binding.btnOpenResult.visibility = if (state.state == RunState.SUCCESS) android.view.View.VISIBLE else android.view.View.GONE
+
+        val succeeded = state.state == RunState.SUCCESS
+        val showText = succeeded && state.mode == TaskMode.TEXT && !state.text.isNullOrBlank()
+        binding.cardResult.visibility = if (showText) android.view.View.VISIBLE else android.view.View.GONE
+        if (showText) binding.tvResultText.text = state.text
+
+        val canOpen = succeeded && state.mode != TaskMode.TEXT &&
+            (!state.outputUri.isNullOrBlank() || !state.outputPath.isNullOrBlank())
+        binding.btnOpenResult.visibility = if (canOpen) android.view.View.VISIBLE else android.view.View.GONE
+        binding.btnOpenResult.text = when (state.mode) {
+            TaskMode.AUDIO -> "在这个页面打开这段音频"
+            TaskMode.VIDEO -> "在这个页面打开这个视频/图集"
+            TaskMode.TEXT -> "打开已保存的文件"
+        }
     }
 
     private fun checkForUpdate(manual: Boolean) {
@@ -228,6 +243,13 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "已粘贴", Toast.LENGTH_SHORT).show()
     }
 
+    private fun copyResultText() {
+        val text = TaskBus.state.value.text.orEmpty()
+        if (text.isBlank()) return
+        val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("识别结果", text))
+        Toast.makeText(this, "文字已复制", Toast.LENGTH_SHORT).show()
+    }
     private fun openResult() {
         val state = TaskBus.state.value
         val uriText = state.outputUri
@@ -266,5 +288,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
-
 

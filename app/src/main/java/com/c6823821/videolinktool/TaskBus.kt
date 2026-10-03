@@ -12,6 +12,7 @@ data class TaskUiState(
     val detail: String = "一次处理一个链接。完成后会在系统“下载”目录看到文件。",
     val outputUri: String? = null,
     val outputPath: String? = null,
+    val text: String? = null,
 )
 
 object TaskBus {
@@ -29,6 +30,7 @@ object TaskBus {
         detail: String,
         outputUri: String? = null,
         outputPath: String? = null,
+        text: String? = null,
     ) {
         state.value = TaskUiState(
             mode = mode,
@@ -38,6 +40,7 @@ object TaskBus {
             detail = detail,
             outputUri = outputUri,
             outputPath = outputPath,
+            text = text,
         )
     }
 }
