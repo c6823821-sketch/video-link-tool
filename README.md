@@ -61,3 +61,12 @@ app/build/outputs/apk/release/app-release.apk
 - `yt-dlp`：Unlicense。
 
 详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 进度、画质和更新
+
+- 下载时同时显示进度条和具体百分比。
+- 视频优先选择平台公开的 1080P/H.264 档位，不进行二次转码压缩。
+- 如果某条 B站作品在无登录状态下平台只返回 720P，App 会显示平台实际返回的画质，不会强行放大或假装成 1080P。
+- App 启动时会自动检查 GitHub Release；有新版本时点“下载更新”即可在 App 内安装。
+- 也可以随时点“检查更新”手动检查。
+
