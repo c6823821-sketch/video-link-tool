@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -16,14 +16,20 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.c6823821.videolinktool.v2"
+        applicationId = "com.c6823821.videolinktool.v3"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.4.4"
+        versionCode = 20
+        versionName = "1.5.0"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            // Default build ships both ABIs. "-PabiFilter=arm64" builds the smaller
+            // arm64-only package used as the primary download for modern phones.
+            abiFilters += if ((findProperty("abiFilter") as String?) == "arm64") {
+                listOf("arm64-v8a")
+            } else {
+                listOf("arm64-v8a", "armeabi-v7a")
+            }
         }
     }
 

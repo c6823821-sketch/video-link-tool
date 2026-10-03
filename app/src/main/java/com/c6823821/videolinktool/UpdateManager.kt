@@ -1,4 +1,4 @@
-﻿package com.c6823821.videolinktool
+package com.c6823821.videolinktool
 
 import android.content.Context
 import android.content.Intent
@@ -26,16 +26,18 @@ object UpdateManager {
         val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
         if (compareVersion(tag, current) <= 0) return null
         val clean = tag.removePrefix("v").removePrefix("V")
-        val file = "VideoLinkTool-v$clean.apk"
-        val direct = "https://github.com/$REPO/releases/download/v$clean/$file"
-        return UpdateInfo(
-            version = clean,
-            downloadUrls = listOf(
-                direct,
-                "https://gh-proxy.com/$direct",
-                "https://ghfast.top/$direct",
-            ),
-        )
+        val arm64 = "https://github.com/$REPO/releases/download/v$clean/VideoLinkTool-v$clean-arm64.apk"
+        val universal = "https://github.com/$REPO/releases/download/v$clean/VideoLinkTool-v$clean.apk"
+        // Newer releases ship a smaller arm64-only package; older ones only have the universal file.
+        val urls = mutableListOf<String>()
+        if (isArm64()) {
+            urls += arm64
+            urls += "https://gh-proxy.com/$arm64"
+        }
+        urls += universal
+        urls += "https://gh-proxy.com/$universal"
+        urls += "https://ghfast.top/$universal"
+        return UpdateInfo(version = clean, downloadUrls = urls)
     }
 
     fun skippedVersion(context: Context): String? =
@@ -184,6 +186,8 @@ object UpdateManager {
         return false
     }
 
+    private fun isArm64(): Boolean =
+        Build.SUPPORTED_ABIS.any { it.equals("arm64-v8a", ignoreCase = true) }
     private fun latestTag(): String? {
         latestTagFromPage()?.let { return it }
         latestTagFromApi()?.let { return it }

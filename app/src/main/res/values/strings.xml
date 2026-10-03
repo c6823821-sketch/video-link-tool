@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">视频工具箱新版</string>
+    <string name="app_name">视频工具箱 1.5</string>
     <string name="mode_video">下视频</string>
     <string name="mode_audio">下音频</string>
     <string name="mode_text">转文字</string>
