@@ -31,7 +31,7 @@
 
 ## 转文字说明
 
-转文字使用离线 `sherpa-onnx + SenseVoiceSmall`，语音模型已内置在 APK 中，安装后不需要另外下载。模型只用于“转文字”，不会在下视频/下音频时启动。
+转文字使用离线 `Vosk Android + vosk-model-small-cn-0.3`，约 33MB 的语音模型已内置在 APK 中，安装后不需要另外下载。模型只用于“转文字”，不会在下视频/下音频时启动。
 
 ## 本地构建
 
@@ -56,8 +56,8 @@ app/build/outputs/apk/release/app-release.apk
 ## 第三方组件
 
 - `youtubedl-android`：yt-dlp / Python / FFmpeg 的安卓封装，GPL-3.0。
-- `sherpa-onnx`：离线 ASR 运行时，Apache-2.0。
-- `SenseVoiceSmall`：离线中文语音识别模型。
+- `Vosk Android`：离线 ASR 运行时，Apache-2.0。
+- `vosk-model-small-cn-0.3`：小型中文离线语音识别模型。
 - `yt-dlp`：Unlicense。
 
 详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -1,7 +1,6 @@
 package com.c6823821.videolinktool
 
 import android.Manifest
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -166,8 +165,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateInputIcon() {
-        val icon = if (binding.etUrl.text.isNullOrBlank()) R.drawable.ic_paste else R.drawable.ic_clear
-        binding.btnInputAction.setImageResource(icon)
+        val empty = binding.etUrl.text.isNullOrBlank()
+        binding.btnInputAction.text = if (empty) "粘贴" else "清空"
     }
 
     private fun handleInputEndIcon() {
@@ -179,14 +178,19 @@ class MainActivity : AppCompatActivity() {
         }
         val clipboard = getSystemService(ClipboardManager::class.java)
         val clip = clipboard?.primaryClip
-        if (clip != null && clip.itemCount > 0) {
-            val text = clip.getItemAt(0).coerceToText(this).toString()
-            if (text.isNotBlank()) {
-                binding.etUrl.setText(text)
-                binding.etUrl.setSelection(text.length)
-                updateInputIcon()
-            }
+        if (clip == null || clip.itemCount == 0) {
+            Toast.makeText(this, "剪贴板里没有可粘贴的内容", Toast.LENGTH_SHORT).show()
+            return
         }
+        val text = clip.getItemAt(0).coerceToText(this).toString().trim()
+        if (text.isBlank()) {
+            Toast.makeText(this, "剪贴板里没有文字链接", Toast.LENGTH_SHORT).show()
+            return
+        }
+        binding.etUrl.setText(text)
+        binding.etUrl.setSelection(text.length)
+        updateInputIcon()
+        Toast.makeText(this, "已粘贴", Toast.LENGTH_SHORT).show()
     }
 
     private fun openResult() {

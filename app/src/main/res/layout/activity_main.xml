@@ -129,15 +129,16 @@
                 android:textColorHint="@color/muted"
                 android:textSize="14sp" />
 
-            <ImageButton
+            <Button
                 android:id="@+id/btnInputAction"
-                android:layout_width="48dp"
+                android:layout_width="72dp"
                 android:layout_height="48dp"
                 android:layout_marginStart="8dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="粘贴或清空"
-                android:padding="12dp"
-                android:src="@drawable/ic_paste" />
+                android:background="@drawable/bg_input"
+                android:text="粘贴"
+                android:textAllCaps="false"
+                android:textColor="@color/brand"
+                android:textSize="14sp" />
         </LinearLayout>
 
         <Button
