@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.tvSubtitle.text = "三个功能完全独立，互不串联。  当前版本 v" + appVersionName()
         askPermissionsIfNeeded()
         binding.btnModeVideo.isChecked = true
         updateMode(TaskMode.VIDEO)
@@ -195,6 +196,9 @@ class MainActivity : AppCompatActivity() {
         launchInstall(file)
     }
 
+    private fun appVersionName(): String =
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
+
     private fun updateInputIcon() {
         val empty = binding.etUrl.text.isNullOrBlank()
         binding.btnInputAction.text = if (empty) "粘贴" else "清空"
@@ -262,4 +266,5 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
+
 
