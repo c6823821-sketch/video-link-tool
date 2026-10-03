@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -48,20 +47,8 @@ class MainActivity : AppCompatActivity() {
             }
             updateMode(mode)
         }
-        binding.btnModeVideo.setOnClickListener { updateMode(TaskMode.VIDEO); startCurrentTaskIfPossible() }
-        binding.btnModeAudio.setOnClickListener { updateMode(TaskMode.AUDIO); startCurrentTaskIfPossible() }
-        binding.btnModeText.setOnClickListener { updateMode(TaskMode.TEXT); startCurrentTaskIfPossible() }
 
-        binding.etUrl.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                val drawable = binding.etUrl.compoundDrawables[2]
-                if (drawable != null && event.x >= binding.etUrl.width - binding.etUrl.paddingEnd - drawable.bounds.width()) {
-                    handleInputEndIcon()
-                    return@setOnTouchListener true
-                }
-            }
-            false
-        }
+        binding.btnInputAction.setOnClickListener { handleInputEndIcon() }
 
         binding.etUrl.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -180,7 +167,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateInputIcon() {
         val icon = if (binding.etUrl.text.isNullOrBlank()) R.drawable.ic_paste else R.drawable.ic_clear
-        binding.etUrl.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, icon, 0)
+        binding.btnInputAction.setImageResource(icon)
     }
 
     private fun handleInputEndIcon() {

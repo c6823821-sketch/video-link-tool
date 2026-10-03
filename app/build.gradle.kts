@@ -66,6 +66,9 @@ android {
 
     androidResources {
         noCompress += "onnx"
+        noCompress += "fst"
+        noCompress += "mdl"
+        noCompress += "ie"
     }
 
     buildFeatures {
@@ -82,4 +85,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
+    implementation("com.alphacephei:vosk-android:0.3.47")
 }

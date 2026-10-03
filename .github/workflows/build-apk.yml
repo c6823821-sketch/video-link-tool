@@ -32,15 +32,13 @@ jobs:
 
       - name: Bundle offline ASR model
         run: |
-          mkdir -p app/src/main/assets/asr
-          curl -L --retry 5 --connect-timeout 30 --max-time 1800 \
-            -o app/src/main/assets/asr/model.int8.onnx \
-            "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main/model.int8.onnx"
-          curl -L --retry 5 --connect-timeout 30 --max-time 300 \
-            -o app/src/main/assets/asr/tokens.txt \
-            "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main/tokens.txt"
-          test "$(stat -c%s app/src/main/assets/asr/model.int8.onnx)" -gt 70000000
-          test "$(stat -c%s app/src/main/assets/asr/tokens.txt)" -gt 50000
+          mkdir -p app/src/main/assets
+          curl -L --retry 5 --connect-timeout 30 --max-time 600 \
+            -o /tmp/vosk-model-small-cn-0.3.zip \
+            "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.3.zip"
+          unzip -q -o /tmp/vosk-model-small-cn-0.3.zip -d app/src/main/assets/
+          test -f app/src/main/assets/vosk-model-small-cn-0.3/final.mdl
+
       - name: Build release APK
         run: |
           chmod +x gradlew
