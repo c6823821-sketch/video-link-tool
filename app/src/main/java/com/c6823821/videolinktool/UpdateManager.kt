@@ -11,41 +11,46 @@ import org.json.JSONObject
 import java.io.File
 
 object UpdateManager {
-    private const val API = "https://api.github.com/repos/c6823821-sketch/video-link-tool/releases/latest"
+    private const val REPO = "c6823821-sketch/video-link-tool"
+    private const val LATEST_PAGE = "https://github.com/$REPO/releases/latest"
+    const val RELEASES_PAGE = "https://github.com/$REPO/releases"
 
-    data class UpdateInfo(val version: String, val downloadUrl: String)
+    data class UpdateInfo(val version: String, val downloadUrls: List<String>)
 
     fun check(context: Context): UpdateInfo? {
-        val request = Request.Builder()
-            .url(API)
-            .header("User-Agent", "VideoLinkTool")
-            .header("Accept", "application/vnd.github+json")
-            .get()
-            .build()
-        HttpClient.client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val root = JSONObject(response.body?.string().orEmpty())
-            val tag = root.optString("tag_name").removePrefix("v").removePrefix("V")
-            val assets = root.optJSONArray("assets") ?: return null
-            var url = ""
-            for (i in 0 until assets.length()) {
-                val item = assets.optJSONObject(i) ?: continue
-                val name = item.optString("name")
-                if (name.endsWith(".apk", ignoreCase = true)) {
-                    url = item.optString("browser_download_url")
-                    if (url.isNotBlank()) break
-                }
-            }
-            if (url.isBlank()) return null
-            val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
-            return if (compareVersion(tag, current) > 0) UpdateInfo(tag, url) else null
-        }
+        val tag = latestTag() ?: return null
+        val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+        if (compareVersion(tag, current) <= 0) return null
+        val clean = tag.removePrefix("v").removePrefix("V")
+        val file = "VideoLinkTool-v$clean.apk"
+        val direct = "https://github.com/$REPO/releases/download/v$clean/$file"
+        val fallback = "https://github.com/$REPO/releases/download/v$clean/app-release.apk"
+        return UpdateInfo(
+            version = clean,
+            downloadUrls = listOf(
+                direct,
+                "https://gh-proxy.com/$direct",
+                "https://ghfast.top/$direct",
+                fallback,
+                "https://gh-proxy.com/$fallback",
+                "https://ghfast.top/$fallback",
+            ),
+        )
     }
 
     fun download(context: Context, info: UpdateInfo, onProgress: (Int) -> Unit): File {
         val output = File(context.cacheDir, "VideoLinkTool-update.apk")
-        Downloader.download(info.downloadUrl, emptyMap(), output) { progress -> onProgress(progress) }
-        return output
+        var lastError: Exception? = null
+        for (url in info.downloadUrls) {
+            try {
+                Downloader.download(url, emptyMap(), output) { progress -> onProgress(progress) }
+                if (output.exists() && output.length() > 1024) return output
+            } catch (e: Exception) {
+                lastError = e
+                output.delete()
+            }
+        }
+        throw IllegalStateException(lastError?.message ?: "更新包下载失败，请用浏览器打开 Release 下载")
     }
 
     fun install(context: Context, file: File) {
@@ -62,6 +67,45 @@ object UpdateManager {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+    }
+
+    private fun latestTag(): String? {
+        latestTagFromPage()?.let { return it }
+        latestTagFromApi()?.let { return it }
+        return null
+    }
+
+    private fun latestTagFromPage(): String? {
+        return try {
+            val request = Request.Builder()
+                .url(LATEST_PAGE)
+                .header("User-Agent", "Mozilla/5.0")
+                .get()
+                .build()
+            HttpClient.client.newCall(request).execute().use { response ->
+                val finalUrl = response.request.url.toString()
+                Regex("/releases/tag/v?([0-9][0-9.]*)").find(finalUrl)?.groupValues?.getOrNull(1)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun latestTagFromApi(): String? {
+        return try {
+            val request = Request.Builder()
+                .url("https://api.github.com/repos/$REPO/releases/latest")
+                .header("User-Agent", "VideoLinkTool")
+                .header("Accept", "application/vnd.github+json")
+                .get()
+                .build()
+            HttpClient.client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                JSONObject(response.body?.string().orEmpty()).optString("tag_name").removePrefix("v").removePrefix("V")
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun compareVersion(a: String, b: String): Int {

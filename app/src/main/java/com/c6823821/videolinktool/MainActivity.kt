@@ -137,6 +137,9 @@ class MainActivity : AppCompatActivity() {
                     .setTitle("发现新版本 " + info.version)
                     .setMessage("现在下载并安装更新？")
                     .setPositiveButton("下载更新") { _, _ -> downloadUpdate(info) }
+                    .setNeutralButton("浏览器打开") { _, _ ->
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateManager.RELEASES_PAGE))) }
+                    }
                     .setNegativeButton("稍后", null)
                     .show()
             }
