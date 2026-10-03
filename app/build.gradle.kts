@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -19,8 +19,8 @@ android {
         applicationId = "com.c6823821.videolinktool.v2"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.4.2"
+        versionCode = 10
+        versionName = "1.4.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -64,12 +64,6 @@ android {
         jvmTarget = "17"
     }
 
-    androidResources {
-        noCompress += "onnx"
-        noCompress += "fst"
-        noCompress += "mdl"
-        noCompress += "ie"
-    }
 
     buildFeatures {
         viewBinding = true
@@ -87,3 +81,4 @@ dependencies {
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("com.alphacephei:vosk-android:0.3.47")
 }
+
