@@ -89,7 +89,7 @@ class MainActivity : AppCompatActivity() {
         val hint = when (mode) {
             TaskMode.VIDEO -> "只下载无水印视频源文件，不提取音频。"
             TaskMode.AUDIO -> "只提取音频，不保存整段视频。"
-            TaskMode.TEXT -> "只输出文字。首次使用会下载约 230MB 离线语音模型。"
+            TaskMode.TEXT -> "只输出文字。首次使用会初始化内置语音模型，不需要下载。"
         }
         binding.tvModeHint.text = hint
         binding.btnRun.text = when (mode) {

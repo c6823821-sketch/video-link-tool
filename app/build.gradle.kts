@@ -19,8 +19,8 @@ android {
         applicationId = "com.c6823821.videolinktool.v2"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.4.1"
+        versionCode = 9
+        versionName = "1.4.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")

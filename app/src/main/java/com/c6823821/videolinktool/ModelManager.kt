@@ -1,11 +1,10 @@
 package com.c6823821.videolinktool
 
 import android.content.Context
+import android.content.res.AssetManager
 import org.vosk.Model
-import org.vosk.android.StorageService
 import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
+import java.io.FileOutputStream
 
 object ModelManager {
     @Volatile private var cached: Model? = null
@@ -16,31 +15,38 @@ object ModelManager {
             cached?.let { return it }
             onProgress(90, "初始化离线语音模型...")
             val modelDir = File(context.filesDir, "vosk-model")
-            if (File(modelDir, "final.mdl").exists()) {
-                return Model(modelDir.absolutePath).also { cached = it }
+            if (!File(modelDir, "final.mdl").exists()) {
+                copyAssetDirectory(context.assets, "vosk-model-small-cn-0.3", modelDir, onProgress)
             }
+            if (!File(modelDir, "final.mdl").exists()) {
+                throw IllegalStateException("内置语音模型不完整，请重新安装最新版")
+            }
+            return Model(modelDir.absolutePath).also { cached = it }
+        }
+    }
 
-            val latch = CountDownLatch(1)
-            var result: Model? = null
-            var error: Exception? = null
-            StorageService.unpack(
-                context,
-                "vosk-model-small-cn-0.3",
-                "vosk-model",
-                { model ->
-                    result = model
-                    latch.countDown()
-                },
-                { exception ->
-                    error = exception
-                    latch.countDown()
-                },
-            )
-            if (!latch.await(10, TimeUnit.MINUTES)) {
-                throw IllegalStateException("语音模型初始化超时")
+    private fun copyAssetDirectory(
+        assets: AssetManager,
+        assetPath: String,
+        targetDir: File,
+        onProgress: (Int, String) -> Unit,
+    ) {
+        val children = assets.list(assetPath).orEmpty()
+        if (children.isEmpty()) {
+            targetDir.parentFile?.mkdirs()
+            assets.open(assetPath).use { input ->
+                FileOutputStream(targetDir, false).use { output -> input.copyTo(output) }
             }
-            error?.let { throw IllegalStateException("语音模型初始化失败：" + (it.message ?: "未知错误"), it) }
-            return result?.also { cached = it } ?: throw IllegalStateException("语音模型初始化失败")
+            return
+        }
+        targetDir.mkdirs()
+        var index = 0
+        children.forEach { child ->
+            val sourceChild = "$assetPath/$child"
+            val targetChild = File(targetDir, child)
+            copyAssetDirectory(assets, sourceChild, targetChild, onProgress)
+            index += 1
+            onProgress((90 + (index * 5 / children.size)).coerceIn(90, 95), "初始化离线语音模型...")
         }
     }
 }
