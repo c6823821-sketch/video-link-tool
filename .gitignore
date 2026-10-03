@@ -13,3 +13,4 @@ release/
 app/src/main/assets/sensevoice/
 keystore.properties
 keystore/
+app/src/main/assets/asr/

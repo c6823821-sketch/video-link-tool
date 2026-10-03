@@ -32,15 +32,15 @@ jobs:
 
       - name: Bundle offline ASR model
         run: |
-          mkdir -p app/src/main/assets/sensevoice
+          mkdir -p app/src/main/assets/asr
           curl -L --retry 5 --connect-timeout 30 --max-time 1800 \
-            -o app/src/main/assets/sensevoice/model.int8.onnx \
-            "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx"
+            -o app/src/main/assets/asr/model.int8.onnx \
+            "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main/model.int8.onnx"
           curl -L --retry 5 --connect-timeout 30 --max-time 300 \
-            -o app/src/main/assets/sensevoice/tokens.txt \
-            "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt"
-          test "$(stat -c%s app/src/main/assets/sensevoice/model.int8.onnx)" -gt 200000000
-          test "$(stat -c%s app/src/main/assets/sensevoice/tokens.txt)" -gt 100000
+            -o app/src/main/assets/asr/tokens.txt \
+            "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main/tokens.txt"
+          test "$(stat -c%s app/src/main/assets/asr/model.int8.onnx)" -gt 70000000
+          test "$(stat -c%s app/src/main/assets/asr/tokens.txt)" -gt 50000
       - name: Build release APK
         run: |
           chmod +x gradlew

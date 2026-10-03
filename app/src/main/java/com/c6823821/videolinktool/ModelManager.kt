@@ -6,10 +6,10 @@ import java.io.File
 import java.io.FileOutputStream
 
 object ModelManager {
-    private const val MODEL_ASSET = "sensevoice/model.int8.onnx"
-    private const val TOKENS_ASSET = "sensevoice/tokens.txt"
-    private const val MODEL_BYTES = 239_233_841L
-    private const val TOKENS_BYTES = 315_894L
+    private const val MODEL_ASSET = "asr/model.int8.onnx"
+    private const val TOKENS_ASSET = "asr/tokens.txt"
+    private const val MODEL_BYTES = 81_828_675L
+    private const val TOKENS_BYTES = 75_352L
 
     data class Paths(val model: File, val tokens: File)
 

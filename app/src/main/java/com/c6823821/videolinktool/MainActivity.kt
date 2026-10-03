@@ -48,6 +48,9 @@ class MainActivity : AppCompatActivity() {
             }
             updateMode(mode)
         }
+        binding.btnModeVideo.setOnClickListener { updateMode(TaskMode.VIDEO); startCurrentTaskIfPossible() }
+        binding.btnModeAudio.setOnClickListener { updateMode(TaskMode.AUDIO); startCurrentTaskIfPossible() }
+        binding.btnModeText.setOnClickListener { updateMode(TaskMode.TEXT); startCurrentTaskIfPossible() }
 
         binding.etUrl.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_UP) {
@@ -67,15 +70,7 @@ class MainActivity : AppCompatActivity() {
         })
         updateInputIcon()
 
-        binding.btnRun.setOnClickListener {
-            val input = binding.etUrl.text?.toString()?.trim().orEmpty()
-            if (input.isBlank()) {
-                Toast.makeText(this, "先粘贴一个链接", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            TaskBus.reset(currentMode)
-            TaskService.start(this, currentMode, input)
-        }
+        binding.btnRun.setOnClickListener { startCurrentTaskIfPossible() }
 
 
         binding.btnOpenResult.setOnClickListener { openResult() }
@@ -94,6 +89,13 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
         if (text.isNotBlank()) binding.etUrl.setText(text)
+    }
+
+    private fun startCurrentTaskIfPossible() {
+        val input = binding.etUrl.text?.toString()?.trim().orEmpty()
+        if (input.isBlank()) return
+        TaskBus.reset(currentMode)
+        TaskService.start(this, currentMode, input)
     }
 
     private fun updateMode(mode: TaskMode) {
