@@ -60,7 +60,7 @@ class TaskService : Service() {
                 }
             } catch (e: NeedCookiesException) {
                 TaskBus.update(mode, RunState.NEED_COOKIE, 0, "抖音需要验证", e.message ?: "请先刷新抖音验证")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val message = e.message?.take(300) ?: "处理失败"
                 TaskBus.update(mode, RunState.ERROR, 0, "处理失败", message)
             } finally {
