@@ -1,4 +1,4 @@
-package com.c6823821.videolinktool
+﻿package com.c6823821.videolinktool
 
 import android.Manifest
 import android.content.ClipboardManager
@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var currentMode = TaskMode.VIDEO
+    private var pendingInstall: java.io.File? = null
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -114,6 +115,7 @@ class MainActivity : AppCompatActivity() {
     private fun checkForUpdate(manual: Boolean) {
         lifecycleScope.launch(Dispatchers.IO) {
             val info = runCatching { UpdateManager.check(this@MainActivity) }.getOrNull()
+            val cached = info?.let { UpdateManager.cachedApk(this@MainActivity, it.version) }
             withContext(Dispatchers.Main) {
                 if (info == null) {
                     binding.updateDot.visibility = android.view.View.GONE
@@ -121,14 +123,20 @@ class MainActivity : AppCompatActivity() {
                     return@withContext
                 }
                 binding.updateDot.visibility = android.view.View.VISIBLE
+                if (!manual && UpdateManager.skippedVersion(this@MainActivity) == info.version) {
+                    return@withContext
+                }
+                val ready = cached != null
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle("发现新版本 " + info.version)
-                    .setMessage("现在下载并安装更新？")
-                    .setPositiveButton("下载更新") { _, _ -> downloadUpdate(info) }
+                    .setMessage(if (ready) "更新包已经下载好了，现在安装？" else "现在下载并安装更新？")
+                    .setPositiveButton(if (ready) "立即安装" else "下载更新") { _, _ -> downloadUpdate(info) }
                     .setNeutralButton("浏览器打开") { _, _ ->
                         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateManager.RELEASES_PAGE))) }
                     }
-                    .setNegativeButton("稍后", null)
+                    .setNegativeButton("稍后") { _, _ ->
+                        if (!manual) UpdateManager.skipVersion(this@MainActivity, info.version)
+                    }
                     .show()
             }
         }
@@ -153,15 +161,38 @@ class MainActivity : AppCompatActivity() {
                 binding.progressBar.visibility = android.view.View.GONE
                 binding.tvProgressPercent.visibility = android.view.View.GONE
                 result.onSuccess { file ->
-                    binding.updateDot.visibility = android.view.View.GONE
-                    binding.tvStatus.text = "更新包下载完成"
-                    UpdateManager.install(this@MainActivity, file)
+                    binding.tvStatus.text = "更新包已就绪"
+                    launchInstall(file)
                 }.onFailure {
                     binding.tvStatus.text = "更新下载失败"
                     Toast.makeText(this@MainActivity, it.message ?: "更新下载失败", Toast.LENGTH_LONG).show()
                 }
             }
         }
+    }
+
+    private fun launchInstall(file: java.io.File) {
+        val started = runCatching { UpdateManager.install(this, file) }
+            .getOrElse {
+                Toast.makeText(this, "无法调起安装：" + (it.message ?: "未知错误"), Toast.LENGTH_LONG).show()
+                false
+            }
+        if (started) {
+            pendingInstall = null
+            binding.updateDot.visibility = android.view.View.GONE
+            binding.tvStatus.text = "请在系统安装界面点“安装”"
+        } else {
+            pendingInstall = file
+            binding.tvStatus.text = "请先允许“安装未知应用”，返回后会自动继续"
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val file = pendingInstall ?: return
+        if (!UpdateManager.isInstallAllowed(this)) return
+        pendingInstall = null
+        launchInstall(file)
     }
 
     private fun updateInputIcon() {
@@ -231,3 +262,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
+

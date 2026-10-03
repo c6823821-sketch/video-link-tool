@@ -1,4 +1,4 @@
-package com.c6823821.videolinktool
+﻿package com.c6823821.videolinktool
 
 import android.content.Context
 import android.content.Intent
@@ -9,11 +9,15 @@ import androidx.core.content.FileProvider
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.io.RandomAccessFile
 
 object UpdateManager {
     private const val REPO = "c6823821-sketch/video-link-tool"
     private const val LATEST_PAGE = "https://github.com/$REPO/releases/latest"
     const val RELEASES_PAGE = "https://github.com/$REPO/releases"
+
+    private const val PREFS = "video_link_tool_update"
+    private const val KEY_SKIP = "skipped_version"
 
     data class UpdateInfo(val version: String, val downloadUrls: List<String>)
 
@@ -24,41 +28,115 @@ object UpdateManager {
         val clean = tag.removePrefix("v").removePrefix("V")
         val file = "VideoLinkTool-v$clean.apk"
         val direct = "https://github.com/$REPO/releases/download/v$clean/$file"
-        val fallback = "https://github.com/$REPO/releases/download/v$clean/app-release.apk"
         return UpdateInfo(
             version = clean,
             downloadUrls = listOf(
                 direct,
                 "https://gh-proxy.com/$direct",
                 "https://ghfast.top/$direct",
-                fallback,
-                "https://gh-proxy.com/$fallback",
-                "https://ghfast.top/$fallback",
             ),
         )
     }
 
-    fun download(context: Context, info: UpdateInfo, onProgress: (Int) -> Unit): File {
-        val output = File(context.cacheDir, "VideoLinkTool-update.apk")
-        var lastError: Exception? = null
-        for (url in info.downloadUrls) {
-            try {
-                Downloader.download(url, emptyMap(), output) { progress -> onProgress(progress) }
-                if (output.exists() && output.length() > 1024) return output
-            } catch (e: Exception) {
-                lastError = e
-                output.delete()
-            }
-        }
-        throw IllegalStateException(lastError?.message ?: "更新包下载失败，请用浏览器打开 Release 下载")
+    fun skippedVersion(context: Context): String? =
+        prefs(context).getString(KEY_SKIP, null)
+
+    fun skipVersion(context: Context, version: String) {
+        prefs(context).edit().putString(KEY_SKIP, version).apply()
     }
 
-    fun install(context: Context, file: File) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-            val settings = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName))
-            settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(settings)
-            return
+    /** Downloaded and verified update package for [version], if we already have one. */
+    fun cachedApk(context: Context, version: String): File? {
+        val file = apkFile(context, version)
+        return if (file.exists() && isValidApk(file)) file else null
+    }
+
+    /**
+     * Downloads the update, resuming a partial file when the server supports Range
+     * requests. On a slow connection this means a dropped download continues instead
+     * of starting the whole 140MB again.
+     */
+    fun download(context: Context, info: UpdateInfo, onProgress: (Int) -> Unit): File {
+        cachedApk(context, info.version)?.let { return it }
+        val target = apkFile(context, info.version)
+        val partial = File(target.parentFile, target.name + ".part")
+
+        var lastError: Exception? = null
+        for (url in info.downloadUrls) {
+            repeat(2) {
+                try {
+                    fetch(url, partial, onProgress)
+                    if (!isValidApk(partial)) throw IllegalStateException("更新包下载不完整")
+                    if (target.exists()) target.delete()
+                    if (!partial.renameTo(target)) {
+                        partial.copyTo(target, overwrite = true)
+                        partial.delete()
+                    }
+                    return target
+                } catch (e: Exception) {
+                    lastError = e
+                }
+            }
+        }
+        throw IllegalStateException(
+            lastError?.message ?: "更新包下载失败，请点“浏览器打开”手动下载"
+        )
+    }
+
+    private fun fetch(url: String, target: File, onProgress: (Int) -> Unit) {
+        val existing = if (target.exists()) target.length() else 0L
+        val builder = Request.Builder()
+            .url(url)
+            .header("User-Agent", HttpClient.MOBILE_UA)
+        if (existing > 0) builder.header("Range", "bytes=$existing-")
+        HttpClient.client.newCall(builder.get().build()).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("下载失败：HTTP ${response.code}")
+            val body = response.body ?: throw IllegalStateException("下载响应为空")
+            val append = existing > 0L && response.code == 206
+            val startAt = if (append) existing else 0L
+            val total = if (response.code == 206) contentRangeTotal(response.header("Content-Range")) else body.contentLength()
+            RandomAccessFile(target, "rw").use { raf ->
+                if (!append) raf.setLength(0)
+                raf.seek(startAt)
+                var written = startAt
+                var lastPercent = -1
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(256 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        raf.write(buffer, 0, count)
+                        written += count
+                        if (total > 0) {
+                            val percent = ((written * 100) / total).toInt().coerceIn(0, 100)
+                            if (percent != lastPercent) {
+                                lastPercent = percent
+                                onProgress(percent)
+                            }
+                        }
+                    }
+                }
+                if (total > 0 && raf.length() != total) {
+                    throw IllegalStateException("连接中断，已下载 " + readable(raf.length()) + " / " + readable(total))
+                }
+            }
+        }
+    }
+
+    fun isInstallAllowed(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+
+    fun openInstallPermission(context: Context) {
+        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName))
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
+    /** Launches the system package installer. Returns false when we had to ask for permission first. */
+    fun install(context: Context, file: File): Boolean {
+        if (!isInstallAllowed(context)) {
+            openInstallPermission(context)
+            return false
         }
         val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
         val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -67,6 +145,43 @@ object UpdateManager {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+        return true
+    }
+
+    private fun apkFile(context: Context, version: String): File {
+        val dir = File(context.filesDir, "updates")
+        dir.mkdirs()
+        return File(dir, "VideoLinkTool-$version.apk")
+    }
+
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun contentRangeTotal(header: String?): Long {
+        val value = header?.substringAfterLast('/')?.trim().orEmpty()
+        return value.toLongOrNull() ?: -1L
+    }
+
+    private fun readable(bytes: Long): String =
+        if (bytes >= 1024 * 1024) (bytes / 1024 / 1024).toString() + "MB" else (bytes / 1024).toString() + "KB"
+
+    /** A finished APK always carries a zip end-of-central-directory record near the end. */
+    fun isValidApk(file: File): Boolean {
+        if (!file.exists() || file.length() < 1024) return false
+        val tailLength = file.length().coerceAtMost(70_000L).toInt()
+        val buffer = ByteArray(tailLength)
+        RandomAccessFile(file, "r").use { raf ->
+            raf.seek(file.length() - tailLength)
+            raf.readFully(buffer)
+        }
+        for (i in buffer.size - 22 downTo 0) {
+            if (buffer[i] == 0x50.toByte() && buffer[i + 1] == 0x4B.toByte() &&
+                buffer[i + 2] == 0x05.toByte() && buffer[i + 3] == 0x06.toByte()
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun latestTag(): String? {

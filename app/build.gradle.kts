@@ -19,8 +19,8 @@ android {
         applicationId = "com.c6823821.videolinktool.v2"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.4.3"
+        versionCode = 11
+        versionName = "1.4.4"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -81,4 +81,5 @@ dependencies {
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("com.alphacephei:vosk-android:0.3.47")
 }
+
 
