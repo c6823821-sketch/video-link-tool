@@ -12,7 +12,7 @@ object TaskRunner {
     ) {
         val source = MediaResolver.resolve(context, rawInput)
         when (source) {
-            is ResolvedSource.Direct -> runDirect(context, mode, source.media, onProgress)
+            is ResolvedSource.Direct -> runDirect(context, mode, rawInput, source.media, onProgress)
             is ResolvedSource.YoutubeDl -> runYoutubeDl(context, mode, rawInput, source, onProgress)
         }
     }
@@ -50,9 +50,11 @@ object TaskRunner {
     private fun runDirect(
         context: Context,
         mode: TaskMode,
+        rawInput: String,
         media: DirectMedia,
         onProgress: (Int, String) -> Unit,
     ) {
+        val originalUrl = LinkExtractor.extract(rawInput).orEmpty();
         if (media.images.isNotEmpty()) {
             if (mode != TaskMode.VIDEO) {
                 throw IllegalStateException("这是图集，没有音频。请选择“下视频”来保存图片。")
@@ -69,16 +71,18 @@ object TaskRunner {
                 Downloader.download(media.url, media.headers, temp) { percent ->
                     onProgress(percent, "正在下载无水印视频" + qualityText + "...")
                 }
+                MediaCache.save(context, originalUrl, temp)
                 val saved = OutputStore.saveFile(context, temp, media.title, "video/mp4")
                 complete(mode, saved)
             }
             TaskMode.AUDIO -> {
                 if (media.url.isBlank()) throw IllegalStateException("没有找到可提取的音频")
+                val cached = MediaCache.get(context, originalUrl)
                 val result = YoutubeDlEngine.download(
                     context = context,
-                    url = media.url,
+                    url = cached?.toURI()?.toString() ?: media.url,
                     mode = TaskMode.AUDIO,
-                    headers = media.headers,
+                    headers = if (cached == null) media.headers else emptyMap(),
                     titleHint = media.title,
                     onProgress = onProgress,
                 )
@@ -87,11 +91,12 @@ object TaskRunner {
             }
             TaskMode.TEXT -> {
                 if (media.url.isBlank()) throw IllegalStateException("没有找到可转写的音频")
+                val cached = MediaCache.get(context, originalUrl)
                 val result = YoutubeDlEngine.download(
                     context = context,
-                    url = media.url,
+                    url = cached?.toURI()?.toString() ?: media.url,
                     mode = TaskMode.TEXT,
-                    headers = media.headers,
+                    headers = if (cached == null) media.headers else emptyMap(),
                     titleHint = media.title,
                     onProgress = { p, text -> onProgress((p * 75) / 100, text) },
                 )
@@ -130,15 +135,17 @@ object TaskRunner {
         onProgress: (Int, String) -> Unit,
     ) {
         val url = LinkExtractor.extract(rawInput) ?: throw IllegalArgumentException("没有识别到链接")
+        val cached = if (mode != TaskMode.VIDEO) MediaCache.get(context, url) else null
         val result = YoutubeDlEngine.download(
             context = context,
-            url = url,
+            url = cached?.toURI()?.toString() ?: url,
             mode = mode,
             titleHint = source.titleHint,
             onProgress = { p, text ->
                 if (mode == TaskMode.TEXT) onProgress((p * 75) / 100, text) else onProgress(p, text)
             },
         )
+        if (mode == TaskMode.VIDEO) MediaCache.save(context, url, result.file)
         if (mode == TaskMode.TEXT) {
             val text = AsrEngine.transcribe(context, result.file.absolutePath) { p, text ->
                 onProgress(75 + (p * 25) / 100, text)

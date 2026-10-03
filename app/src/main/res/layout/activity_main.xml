@@ -11,13 +11,45 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="视频工具箱"
-            android:textColor="@color/ink"
-            android:textSize="28sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="视频工具箱"
+                android:textColor="@color/ink"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+
+            <FrameLayout
+                android:layout_width="48dp"
+                android:layout_height="48dp">
+
+                <ImageButton
+                    android:id="@+id/btnCheckUpdate"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="检查更新"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_update" />
+
+                <View
+                    android:id="@+id/updateDot"
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="7dp"
+                    android:layout_marginEnd="7dp"
+                    android:background="@drawable/dot_red"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
@@ -80,9 +112,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:background="@drawable/bg_input"
-            android:drawableEnd="@android:drawable/ic_menu_close_clear_cancel"
-            android:drawableTint="@color/muted"
-            android:drawablePadding="8dp"
             android:gravity="top|start"
             android:hint="@string/hint_url"
             android:inputType="textUri|textMultiLine"
@@ -112,7 +141,8 @@
             android:layout_marginTop="20dp"
             android:max="100"
             android:progress="0"
-            android:progressTint="@color/brand" />
+            android:progressTint="@color/brand"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/tvProgressPercent"
@@ -122,6 +152,7 @@
             android:gravity="end"
             android:text="0%"
             android:textColor="@color/brand"
+            android:visibility="gone"
             android:textSize="13sp"
             android:textStyle="bold" />
 
@@ -143,16 +174,6 @@
             android:text="一次处理一个链接。完成后会在系统“下载”目录看到文件。"
             android:textColor="@color/muted"
             android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/btnCheckUpdate"
-            android:layout_width="match_parent"
-            android:layout_height="46dp"
-            android:layout_marginTop="10dp"
-            android:backgroundTint="@android:color/transparent"
-            android:text="检查更新"
-            android:textAllCaps="false"
-            android:textColor="@color/brand" />
 
         <Button
             android:id="@+id/btnOpenResult"
@@ -185,7 +206,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="抖音、快手、小红书现在走无登录解析；图集会按图片保存，视频会按视频保存。"
+                android:text="抖音、快手、小红书支持视频和图集；B站、百度视频、今日头条支持视频。"
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
 

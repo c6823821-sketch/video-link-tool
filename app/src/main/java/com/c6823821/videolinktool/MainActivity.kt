@@ -1,11 +1,15 @@
 package com.c6823821.videolinktool
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,13 +53,19 @@ class MainActivity : AppCompatActivity() {
             if (event.action == MotionEvent.ACTION_UP) {
                 val drawable = binding.etUrl.compoundDrawables[2]
                 if (drawable != null && event.x >= binding.etUrl.width - binding.etUrl.paddingEnd - drawable.bounds.width()) {
-                    binding.etUrl.text?.clear()
-                    binding.etUrl.performClick()
+                    handleInputEndIcon()
                     return@setOnTouchListener true
                 }
             }
             false
         }
+
+        binding.etUrl.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = updateInputIcon()
+        })
+        updateInputIcon()
 
         binding.btnRun.setOnClickListener {
             val input = binding.etUrl.text?.toString()?.trim().orEmpty()
@@ -107,6 +117,8 @@ class MainActivity : AppCompatActivity() {
         binding.tvStatus.text = state.title
         binding.tvDetail.text = state.detail
         val running = state.state == RunState.RUNNING
+        binding.progressBar.visibility = if (running) android.view.View.VISIBLE else android.view.View.GONE
+        binding.tvProgressPercent.visibility = if (running) android.view.View.VISIBLE else android.view.View.GONE
         binding.btnRun.isEnabled = !running
         binding.btnOpenResult.visibility = if (state.state == RunState.SUCCESS) android.view.View.VISIBLE else android.view.View.GONE
     }
@@ -116,9 +128,11 @@ class MainActivity : AppCompatActivity() {
             val info = runCatching { UpdateManager.check(this@MainActivity) }.getOrNull()
             withContext(Dispatchers.Main) {
                 if (info == null) {
+                    binding.updateDot.visibility = android.view.View.GONE
                     if (manual) Toast.makeText(this@MainActivity, "当前已经是最新版", Toast.LENGTH_SHORT).show()
                     return@withContext
                 }
+                binding.updateDot.visibility = android.view.View.VISIBLE
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle("发现新版本 " + info.version)
                     .setMessage("现在下载并安装更新？")
@@ -130,6 +144,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadUpdate(info: UpdateManager.UpdateInfo) {
+        binding.progressBar.visibility = android.view.View.VISIBLE
+        binding.tvProgressPercent.visibility = android.view.View.VISIBLE
         binding.tvStatus.text = "正在下载更新"
         binding.btnCheckUpdate.isEnabled = false
         lifecycleScope.launch(Dispatchers.IO) {
@@ -143,13 +159,40 @@ class MainActivity : AppCompatActivity() {
             }
             withContext(Dispatchers.Main) {
                 binding.btnCheckUpdate.isEnabled = true
+                binding.progressBar.visibility = android.view.View.GONE
+                binding.tvProgressPercent.visibility = android.view.View.GONE
                 result.onSuccess { file ->
+                    binding.updateDot.visibility = android.view.View.GONE
                     binding.tvStatus.text = "更新包下载完成"
                     UpdateManager.install(this@MainActivity, file)
                 }.onFailure {
                     binding.tvStatus.text = "更新下载失败"
                     Toast.makeText(this@MainActivity, it.message ?: "更新下载失败", Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    private fun updateInputIcon() {
+        val icon = if (binding.etUrl.text.isNullOrBlank()) R.drawable.ic_paste else R.drawable.ic_clear
+        binding.etUrl.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, icon, 0)
+    }
+
+    private fun handleInputEndIcon() {
+        val value = binding.etUrl.text?.toString().orEmpty()
+        if (value.isNotBlank()) {
+            binding.etUrl.text?.clear()
+            updateInputIcon()
+            return
+        }
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        val clip = clipboard?.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            val text = clip.getItemAt(0).coerceToText(this).toString()
+            if (text.isNotBlank()) {
+                binding.etUrl.setText(text)
+                binding.etUrl.setSelection(text.length)
+                updateInputIcon()
             }
         }
     }

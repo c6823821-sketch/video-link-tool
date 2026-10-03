@@ -46,6 +46,7 @@ object YoutubeDlEngine {
         if (!cookieFile.isNullOrBlank()) {
             request.addOption("--cookies", cookieFile)
         }
+        if (url.startsWith("file:")) request.addOption("--enable-file-urls")
         headers.forEach { (key, value) -> request.addOption("--add-header", "$key: $value") }
 
         when (mode) {
@@ -68,7 +69,7 @@ object YoutubeDlEngine {
             }
         }
 
-        val info = runCatching {
+        val info = if (url.startsWith("file:")) null else runCatching {
             val infoRequest = YoutubeDLRequest(url)
             infoRequest.addOption("--no-playlist")
             infoRequest.addOption("--no-warnings")

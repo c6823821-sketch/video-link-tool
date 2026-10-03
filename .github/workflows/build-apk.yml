@@ -30,6 +30,17 @@ jobs:
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
+      - name: Bundle offline ASR model
+        run: |
+          mkdir -p app/src/main/assets/sensevoice
+          curl -L --retry 5 --connect-timeout 30 --max-time 1800 \
+            -o app/src/main/assets/sensevoice/model.int8.onnx \
+            "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx"
+          curl -L --retry 5 --connect-timeout 30 --max-time 300 \
+            -o app/src/main/assets/sensevoice/tokens.txt \
+            "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt"
+          test "$(stat -c%s app/src/main/assets/sensevoice/model.int8.onnx)" -gt 200000000
+          test "$(stat -c%s app/src/main/assets/sensevoice/tokens.txt)" -gt 100000
       - name: Build release APK
         run: |
           chmod +x gradlew
@@ -48,3 +59,4 @@ jobs:
         with:
           files: app/build/outputs/apk/release/app-release.apk
           generate_release_notes: true
+

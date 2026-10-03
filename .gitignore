@@ -9,3 +9,5 @@ captures/
 .cxx/
 *.apk
 *.aab
+release/
+app/src/main/assets/sensevoice/
