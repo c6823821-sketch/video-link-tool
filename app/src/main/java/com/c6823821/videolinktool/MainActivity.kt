@@ -9,13 +9,16 @@ import android.os.Bundle
 import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.c6823821.videolinktool.databinding.ActivityMainBinding
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -67,6 +70,9 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnOpenResult.setOnClickListener { openResult() }
 
+        binding.btnCheckUpdate.setOnClickListener { checkForUpdate(true) }
+        checkForUpdate(false)
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 TaskBus.state.collect { render(it) }
@@ -97,11 +103,55 @@ class MainActivity : AppCompatActivity() {
 
     private fun render(state: TaskUiState) {
         binding.progressBar.progress = state.progress
+        binding.tvProgressPercent.text = state.progress.toString() + "%"
         binding.tvStatus.text = state.title
         binding.tvDetail.text = state.detail
         val running = state.state == RunState.RUNNING
         binding.btnRun.isEnabled = !running
         binding.btnOpenResult.visibility = if (state.state == RunState.SUCCESS) android.view.View.VISIBLE else android.view.View.GONE
+    }
+
+    private fun checkForUpdate(manual: Boolean) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val info = runCatching { UpdateManager.check(this@MainActivity) }.getOrNull()
+            withContext(Dispatchers.Main) {
+                if (info == null) {
+                    if (manual) Toast.makeText(this@MainActivity, "当前已经是最新版", Toast.LENGTH_SHORT).show()
+                    return@withContext
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("发现新版本 " + info.version)
+                    .setMessage("现在下载并安装更新？")
+                    .setPositiveButton("下载更新") { _, _ -> downloadUpdate(info) }
+                    .setNegativeButton("稍后", null)
+                    .show()
+            }
+        }
+    }
+
+    private fun downloadUpdate(info: UpdateManager.UpdateInfo) {
+        binding.tvStatus.text = "正在下载更新"
+        binding.btnCheckUpdate.isEnabled = false
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                UpdateManager.download(this@MainActivity, info) { progress ->
+                    runOnUiThread {
+                        binding.progressBar.progress = progress
+                        binding.tvProgressPercent.text = progress.toString() + "%"
+                    }
+                }
+            }
+            withContext(Dispatchers.Main) {
+                binding.btnCheckUpdate.isEnabled = true
+                result.onSuccess { file ->
+                    binding.tvStatus.text = "更新包下载完成"
+                    UpdateManager.install(this@MainActivity, file)
+                }.onFailure {
+                    binding.tvStatus.text = "更新下载失败"
+                    Toast.makeText(this@MainActivity, it.message ?: "更新下载失败", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun openResult() {

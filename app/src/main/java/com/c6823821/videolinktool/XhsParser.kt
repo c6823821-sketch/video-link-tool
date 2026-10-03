@@ -31,11 +31,13 @@ object XhsParser {
         val videoUrl = chosen?.optString("masterUrl").orEmpty().replace("http://", "https://")
         val title = note.optString("title").ifBlank { note.optString("desc").take(60) }.ifBlank { "小红书作品" }
         if (videoUrl.isNotBlank()) {
+            val height = chosen?.optLong("height") ?: 0
             return DirectMedia(
                 title = title,
                 url = videoUrl,
                 headers = mapOf("Referer" to "https://www.xiaohongshu.com/", "User-Agent" to UA),
                 site = "小红书",
+                quality = if (height > 0) height.toString() + "P" else "原画",
             )
         }
         val images = mutableListOf<ImageItem>()
@@ -55,6 +57,7 @@ object XhsParser {
             title = title,
             headers = mapOf("Referer" to "https://www.xiaohongshu.com/", "User-Agent" to UA),
             site = "小红书",
+            quality = "图集",
             images = images,
         )
     }

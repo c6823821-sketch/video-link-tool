@@ -51,6 +51,7 @@ object YoutubeDlEngine {
         when (mode) {
             TaskMode.VIDEO -> {
                 request.addOption("-f", "bv*[vcodec^=avc1][height<=1080]+ba/b[ext=mp4]/b")
+                request.addOption("--format-sort", "res:1080,br")
                 request.addOption("--merge-output-format", "mp4")
             }
             TaskMode.AUDIO -> {

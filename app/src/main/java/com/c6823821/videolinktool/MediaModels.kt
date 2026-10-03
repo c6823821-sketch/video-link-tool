@@ -11,6 +11,7 @@ data class DirectMedia(
     val headers: Map<String, String> = emptyMap(),
     val ext: String = "mp4",
     val site: String = "平台",
+    val quality: String = "",
     val images: List<ImageItem> = emptyList(),
 )
 

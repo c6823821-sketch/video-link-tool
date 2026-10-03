@@ -41,12 +41,31 @@ object KuaishouParser {
         }
 
         var videoUrl = ""
+        var quality = ""
         if (images.isEmpty()) {
             videoUrl = photo.optJSONArray("mainMvUrls")?.optJSONObject(0)?.optString("url").orEmpty()
-            if (videoUrl.isBlank()) {
-                val reps = photo.optJSONObject("manifest")?.optJSONArray("adaptationSet")
-                    ?.optJSONObject(0)?.optJSONArray("representation")
-                videoUrl = reps?.optJSONObject(0)?.optString("url").orEmpty()
+            quality = photo.optLong("height", 0).takeIf { it > 0 }?.let { it.toString() + "P" } ?: ""
+            val reps = photo.optJSONObject("manifest")?.optJSONArray("adaptationSet")
+                ?.optJSONObject(0)?.optJSONArray("representation")
+            if (reps != null) {
+                var bestPixels = -1L
+                var bestUrl = videoUrl
+                var bestHeight = photo.optLong("height", 0)
+                for (i in 0 until reps.length()) {
+                    val rep = reps.optJSONObject(i) ?: continue
+                    val codec = rep.optString("videoCodec").lowercase()
+                    if (codec.isNotBlank() && codec != "avc" && codec != "h264") continue
+                    val url = rep.optString("url")
+                    if (url.isBlank()) continue
+                    val pixels = rep.optLong("width") * rep.optLong("height")
+                    if (pixels >= bestPixels) {
+                        bestPixels = pixels
+                        bestUrl = url
+                        bestHeight = rep.optLong("height", bestHeight)
+                    }
+                }
+                if (bestUrl.isNotBlank()) videoUrl = bestUrl
+                if (bestHeight > 0) quality = bestHeight.toString() + "P"
             }
         }
         if (videoUrl.isBlank() && images.isEmpty()) throw IllegalStateException("快手作品没有可下载资源")
@@ -55,6 +74,7 @@ object KuaishouParser {
             url = videoUrl,
             headers = mapOf("Referer" to "https://v.kuaishou.com/", "User-Agent" to UA),
             site = "快手",
+            quality = if (images.isNotEmpty()) "图集" else quality,
             images = images,
         )
     }

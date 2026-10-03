@@ -30,6 +30,7 @@ object BilibiliParser {
             ?: throw IllegalStateException("B站没有返回可下载地址")
         val direct = durl.optJSONObject(0)?.optString("url").orEmpty()
         if (direct.isBlank()) throw IllegalStateException("B站播放地址为空")
+        val quality = qualityLabel(play.optJSONObject("data")?.optInt("quality") ?: 0)
         return DirectMedia(
             title = title,
             url = direct,
@@ -38,6 +39,19 @@ object BilibiliParser {
                 "User-Agent" to UA,
             ),
             site = "哔哩哔哩",
+            quality = quality,
         )
+    }
+
+    private fun qualityLabel(quality: Int): String = when (quality) {
+        120 -> "4K"
+        116 -> "1080P60"
+        112 -> "1080P+"
+        80 -> "1080P"
+        74 -> "720P60"
+        64 -> "720P"
+        32 -> "480P"
+        16 -> "360P"
+        else -> "平台原画"
     }
 }

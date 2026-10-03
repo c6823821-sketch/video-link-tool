@@ -32,9 +32,7 @@ object DouyinParser {
                         if (detail != null) return build(detail)
                     }
                     val filters = root.optJSONArray("filter_list")
-                    if (filters != null && filters.length() > 0) {
-                        lastError = "抖音限制了这个作品的接口数据"
-                    }
+                    if (filters != null && filters.length() > 0) lastError = "抖音限制了这个作品的接口数据"
                 } catch (e: Exception) {
                     lastError = e.message ?: lastError
                 }
@@ -54,21 +52,52 @@ object DouyinParser {
                 if (url.isNotBlank()) images += ImageItem(url)
             }
         }
-        val video = detail.optJSONObject("video")
-        val primary = video?.optJSONObject("play_addr_h264") ?: video?.optJSONObject("play_addr")
-        var videoUrl = primary?.optJSONArray("url_list")?.optString(0).orEmpty().replace("playwm", "play")
-        if (images.isNotEmpty()) videoUrl = ""
-        if (videoUrl.isBlank() && images.isEmpty()) throw IllegalStateException("抖音作品没有可下载资源")
+        val video = chooseVideo(detail.optJSONObject("video"))
+        if (images.isNotEmpty()) {
+            return DirectMedia(
+                title = title,
+                headers = mapOf("Referer" to "https://www.douyin.com/", "User-Agent" to UA),
+                site = "抖音",
+                quality = "图集",
+                images = images,
+            )
+        }
+        if (video.second.isBlank()) throw IllegalStateException("抖音作品没有可下载资源")
         return DirectMedia(
             title = title,
-            url = videoUrl,
-            headers = mapOf(
-                "Referer" to "https://www.douyin.com/",
-                "User-Agent" to UA,
-            ),
+            url = video.second,
+            headers = mapOf("Referer" to "https://www.douyin.com/", "User-Agent" to UA),
             site = "抖音",
-            images = images,
+            quality = video.first,
         )
+    }
+
+    private fun chooseVideo(video: JSONObject?): Pair<String, String> {
+        if (video == null) return "" to ""
+        data class Candidate(val url: String, val pixels: Long, val bitrate: Long, val quality: String)
+        val candidates = mutableListOf<Candidate>()
+        val bitRates = video.optJSONArray("bit_rate")
+        if (bitRates != null) {
+            for (i in 0 until bitRates.length()) {
+                val item = bitRates.optJSONObject(i) ?: continue
+                if (item.optInt("is_h265", 0) == 1) continue
+                val play = item.optJSONObject("play_addr") ?: continue
+                var url = play.optJSONArray("url_list")?.optString(0).orEmpty().replace("playwm", "play")
+                if (url.isBlank()) continue
+                val width = play.optLong("width")
+                val height = play.optLong("height")
+                val quality = if (height > 0) height.toString() + "P" else item.optString("gear_name")
+                candidates += Candidate(url, width * height, item.optLong("bit_rate"), quality)
+            }
+        }
+        val fallback = video.optJSONObject("play_addr_h264") ?: video.optJSONObject("play_addr")
+        var fallbackUrl = fallback?.optJSONArray("url_list")?.optString(0).orEmpty().replace("playwm", "play")
+        val fallbackHeight = fallback?.optLong("height") ?: 0
+        if (candidates.isEmpty() && fallbackUrl.isNotBlank()) {
+            return (if (fallbackHeight > 0) fallbackHeight.toString() + "P" else "原画") to fallbackUrl
+        }
+        val best = candidates.maxWithOrNull(compareBy<Candidate> { it.pixels }.thenBy { it.bitrate })
+        return if (best != null) best.quality.ifBlank { "原画" } to best.url else "" to fallbackUrl
     }
 
     private fun chooseImage(urlList: JSONArray?): String {
@@ -96,14 +125,9 @@ object DouyinParser {
             ttwid?.let { return it }
             return try {
                 val body = JSONObject()
-                    .put("region", "cn")
-                    .put("aid", 1768)
-                    .put("needFid", false)
-                    .put("service", "www.ixigua.com")
-                    .put("union", true)
-                    .put("cbUrlProtocol", "https")
-                    .put("migrate_info", JSONObject().put("ticket", "").put("source", "node"))
-                    .toString()
+                    .put("region", "cn").put("aid", 1768).put("needFid", false)
+                    .put("service", "www.ixigua.com").put("union", true).put("cbUrlProtocol", "https")
+                    .put("migrate_info", JSONObject().put("ticket", "").put("source", "node")).toString()
                 val request = Request.Builder()
                     .url("https://ttwid.bytedance.com/ttwid/union/register/")
                     .post(body.toRequestBody("application/json".toMediaType()))

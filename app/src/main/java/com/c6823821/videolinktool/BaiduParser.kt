@@ -16,7 +16,7 @@ object BaiduParser {
         val info = data.optJSONObject("videoInfo") ?: throw IllegalStateException("百度视频详情为空")
         val title = info.optString("title").ifBlank { data.optString("title", "百度视频") }
 
-        data class Choice(val url: String, val size: Double)
+        data class Choice(val url: String, val size: Double, val label: String)
         val choices = mutableListOf<Choice>()
         val clarity = info.optJSONArray("clarityArr")
         if (clarity != null) {
@@ -25,17 +25,20 @@ object BaiduParser {
                 val url = item.optString("url")
                 if (url.isBlank()) continue
                 val size = item.optString("videoSize").toDoubleOrNull() ?: 0.0
-                choices += Choice(url, size)
+                val label = item.optString("key").uppercase().ifBlank { item.optString("title") }
+                choices += Choice(url, size, label)
             }
         }
         val fallback = info.optString("play_url")
-        val chosen = choices.maxByOrNull { it.size }?.url ?: fallback
+        val best = choices.maxByOrNull { it.size }
+        val chosen = best?.url ?: fallback
         if (chosen.isBlank()) throw IllegalStateException("百度视频没有可用播放地址")
         return DirectMedia(
             title = title,
             url = chosen,
             headers = mapOf("Referer" to "https://mbd.baidu.com/"),
             site = "百度视频",
+            quality = best?.label?.ifBlank { "原画" } ?: "原画",
         )
     }
 
@@ -53,6 +56,7 @@ object BaiduParser {
         val arr = meta.optJSONArray("clarityUrl")
         var bestUrl = ""
         var bestSize = -1.0
+        var bestLabel = ""
         if (arr != null) {
             for (i in 0 until arr.length()) {
                 val item = arr.optJSONObject(i) ?: continue
@@ -61,6 +65,7 @@ object BaiduParser {
                 if (url.startsWith("http") && size > bestSize) {
                     bestUrl = url
                     bestSize = size
+                    bestLabel = item.optString("name").ifBlank { item.optString("title") }
                 }
             }
         }
@@ -71,6 +76,7 @@ object BaiduParser {
             url = bestUrl,
             headers = mapOf("Referer" to "https://haokan.baidu.com/"),
             site = "百度好看视频",
+            quality = bestLabel.ifBlank { "原画" },
         )
     }
 }

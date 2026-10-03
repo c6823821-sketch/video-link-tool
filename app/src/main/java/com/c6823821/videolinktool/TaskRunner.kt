@@ -65,8 +65,9 @@ object TaskRunner {
             TaskMode.VIDEO -> {
                 if (media.url.isBlank()) throw IllegalStateException("没有找到可下载的视频地址")
                 val temp = File(context.cacheDir, "video_link_tool_" + System.currentTimeMillis() + "." + media.ext)
+                val qualityText = if (media.quality.isNotBlank()) "（" + media.quality + "）" else ""
                 Downloader.download(media.url, media.headers, temp) { percent ->
-                    onProgress(percent, "正在下载无水印视频...")
+                    onProgress(percent, "正在下载无水印视频" + qualityText + "...")
                 }
                 val saved = OutputStore.saveFile(context, temp, media.title, "video/mp4")
                 complete(mode, saved)
