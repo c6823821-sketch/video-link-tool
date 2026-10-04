@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 class TaskService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    private val generation = java.util.concurrent.atomic.AtomicInteger(0)
 
     companion object {
         private const val CHANNEL_ID = "video_link_tool_tasks"
@@ -50,22 +51,39 @@ class TaskService : Service() {
             return START_NOT_STICKY
         }
         startForegroundCompat("准备中...", 0)
+
+        // Kill whatever is still running: cancelling the coroutine alone leaves the
+        // native yt-dlp process and the HTTP download going, which is what made the
+        // progress bars mix up and what ran the phone out of memory.
+        TaskControl.cancel()
         job?.cancel()
+        val token = generation.incrementAndGet()
+        val processId = "video-link-tool-" + token
+        TaskControl.begin(processId)
+
         job = scope.launch {
+            val alive = { generation.get() == token && !TaskControl.cancelled }
             try {
-                TaskBus.update(mode, RunState.RUNNING, 0, "开始处理", "正在解析链接...")
+                if (alive()) TaskBus.update(mode, RunState.RUNNING, 0, "开始处理", "正在解析链接...")
                 TaskRunner.run(this@TaskService, mode, input) { progress, detail ->
-                    TaskBus.update(mode, RunState.RUNNING, progress, detail, "任务进行中")
-                    updateNotification(detail, progress)
+                    if (alive()) {
+                        TaskBus.update(mode, RunState.RUNNING, progress, detail, "任务进行中")
+                        updateNotification(detail, progress)
+                    }
                 }
             } catch (e: NeedCookiesException) {
-                TaskBus.update(mode, RunState.NEED_COOKIE, 0, "抖音需要验证", e.message ?: "请先刷新抖音验证")
+                if (alive()) TaskBus.update(mode, RunState.NEED_COOKIE, 0, "抖音需要验证", e.message ?: "请先刷新抖音验证")
             } catch (e: Throwable) {
-                val message = e.message?.take(300) ?: "处理失败"
-                TaskBus.update(mode, RunState.ERROR, 0, "处理失败", message)
+                if (alive()) {
+                    val message = e.message?.take(300) ?: "处理失败"
+                    TaskBus.update(mode, RunState.ERROR, 0, "处理失败", message)
+                }
             } finally {
-                stopForegroundCompat()
-                stopSelf()
+                TaskControl.finish(processId)
+                if (generation.get() == token) {
+                    stopForegroundCompat()
+                    stopSelf()
+                }
             }
         }
         return START_NOT_STICKY

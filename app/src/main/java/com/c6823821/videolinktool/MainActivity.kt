@@ -86,6 +86,23 @@ class MainActivity : AppCompatActivity() {
     private fun startCurrentTaskIfPossible() {
         val input = binding.etUrl.text?.toString()?.trim().orEmpty()
         if (input.isBlank()) return
+        val running = TaskBus.state.value
+        if (running.state == RunState.RUNNING) {
+            AlertDialog.Builder(this)
+                .setTitle("还有一个任务没做完")
+                .setMessage("现在正在进行：" + running.detail + "。要么等它做完，要么中断它再开始新的。")
+                .setPositiveButton("中断并开始新的") { _, _ ->
+                    TaskControl.cancel()
+                    startTask(input)
+                }
+                .setNegativeButton("继续等它做完", null)
+                .show()
+            return
+        }
+        startTask(input)
+    }
+
+    private fun startTask(input: String) {
         TaskBus.reset(currentMode)
         TaskService.start(this, currentMode, input)
     }
@@ -98,9 +115,8 @@ class MainActivity : AppCompatActivity() {
             TaskMode.TEXT -> "只输出文字，结果显示在下方框里，不自动保存。模型内置，不用下载。"
         }
         binding.tvModeHint.text = hint
-        if (TaskBus.state.value.state != RunState.RUNNING) {
-            render(modeStates[mode] ?: TaskUiState(mode = mode))
-        }
+        val runningState = TaskBus.state.value
+        render(if (runningState.state == RunState.RUNNING) runningState else modeStates[mode] ?: TaskUiState(mode = mode))
         binding.btnRun.text = when (mode) {
             TaskMode.VIDEO -> "开始下载视频"
             TaskMode.AUDIO -> "开始提取音频"
@@ -333,4 +349,3 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
-

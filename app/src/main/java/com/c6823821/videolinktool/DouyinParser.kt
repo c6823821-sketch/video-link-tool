@@ -93,6 +93,17 @@ object DouyinParser {
         val fallback = video.optJSONObject("play_addr_h264") ?: video.optJSONObject("play_addr")
         var fallbackUrl = fallback?.optJSONArray("url_list")?.optString(0).orEmpty().replace("playwm", "play")
         val fallbackHeight = fallback?.optLong("height") ?: 0
+        // The bit_rate list sometimes only carries the lower gears for anonymous
+        // requests, so treat the top level play address as a candidate as well.
+        if (fallbackUrl.isNotBlank()) {
+            val width = fallback?.optLong("width") ?: 0
+            candidates += Candidate(
+                fallbackUrl,
+                width * fallbackHeight,
+                0L,
+                if (fallbackHeight > 0) fallbackHeight.toString() + "P" else "原画",
+            )
+        }
         if (candidates.isEmpty() && fallbackUrl.isNotBlank()) {
             return (if (fallbackHeight > 0) fallbackHeight.toString() + "P" else "原画") to fallbackUrl
         }

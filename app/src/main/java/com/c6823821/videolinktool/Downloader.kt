@@ -29,6 +29,7 @@ object Downloader {
                 BufferedOutputStream(FileOutputStream(output)).use { outputStream ->
                     val buffer = ByteArray(256 * 1024)
                     while (true) {
+                        if (TaskControl.cancelled) throw IllegalStateException("任务已取消")
                         val count = input.read(buffer)
                         if (count < 0) break
                         outputStream.write(buffer, 0, count)

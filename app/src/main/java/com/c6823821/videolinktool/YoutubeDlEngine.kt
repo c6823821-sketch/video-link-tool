@@ -80,7 +80,7 @@ object YoutubeDlEngine {
 
         YoutubeDL.getInstance().execute(
             request,
-            processId = null,
+            processId = TaskControl.processId,
             redirectErrorStream = true,
         ) { progress, _, _ ->
             if (progress >= 0f) {
