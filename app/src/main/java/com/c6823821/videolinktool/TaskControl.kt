@@ -1,37 +1,36 @@
 package com.c6823821.videolinktool
 
 import com.yausername.youtubedl_android.YoutubeDL
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Lets a running task be stopped for real.
+ * Lets a running task be stopped for real. Each function has its own slot, so
+ * cancelling 下视频 does not touch a 转文字 job running beside it.
  *
- * Cancelling the coroutine is not enough: yt-dlp runs as a native child process
- * and the HTTP downloader keeps reading bytes. Both have to be told to stop, and
- * the killed task must stop pushing progress so it cannot overwrite the next one.
+ * Cancelling the coroutine alone is not enough: yt-dlp runs as a native child
+ * process and the HTTP downloader keeps reading bytes.
  */
 object TaskControl {
-    @Volatile
-    var cancelled: Boolean = false
-        private set
+    private val cancelled = ConcurrentHashMap<TaskMode, Boolean>()
+    private val processIds = ConcurrentHashMap<TaskMode, String>()
 
-    @Volatile
-    var processId: String? = null
-        private set
-
-    fun begin(processId: String) {
-        cancelled = false
-        this.processId = processId
+    fun begin(mode: TaskMode, processId: String) {
+        cancelled[mode] = false
+        processIds[mode] = processId
     }
 
-    fun cancel() {
-        cancelled = true
-        processId?.let { id ->
+    fun cancel(mode: TaskMode) {
+        cancelled[mode] = true
+        processIds.remove(mode)?.let { id ->
             runCatching { YoutubeDL.getInstance().destroyProcessById(id) }
         }
-        processId = null
     }
 
-    fun finish(processId: String) {
-        if (this.processId == processId) this.processId = null
+    fun isCancelled(mode: TaskMode): Boolean = cancelled[mode] == true
+
+    fun processId(mode: TaskMode): String? = processIds[mode]
+
+    fun finish(mode: TaskMode, processId: String) {
+        if (processIds[mode] == processId) processIds.remove(mode)
     }
 }

@@ -35,6 +35,29 @@ object TaskRunner {
         )
     }
 
+    /** Prefer the 剪映 cloud engine; fall back to the bundled offline model. */
+    private fun transcribeText(
+        context: Context,
+        wavPath: String,
+        onProgress: (Int, String) -> Unit,
+    ): String {
+        val cloud = runCatching {
+            val segments = JianyingAsr.transcribe(wavPath) { p, detail ->
+                onProgress(70 + (p * 8) / 100, detail)
+            }
+            if (segments.isEmpty()) "" else JianyingAsr.compose(segments)
+        }.getOrNull()
+        if (!cloud.isNullOrBlank()) {
+            onProgress(100, "剪映云识别完成")
+            return cloud
+        }
+        onProgress(78, "云端识别不可用，改用本地识别...")
+        return AsrEngine.transcribe(context, wavPath) { p, detail ->
+            onProgress(78 + (p * 22) / 100, detail)
+        }
+    }
+
+
     /** Transcription is shown in the app itself; nothing is written to Downloads. */
     private fun completeText(text: String) {
         TaskBus.update(
@@ -80,7 +103,7 @@ object TaskRunner {
                 if (media.url.isBlank()) throw IllegalStateException("没有找到可下载的视频地址")
                 val temp = File(context.cacheDir, "video_link_tool_" + System.currentTimeMillis() + "." + media.ext)
                 val qualityText = if (media.quality.isNotBlank()) "（" + media.quality + "）" else ""
-                Downloader.download(media.url, media.headers, temp) { percent ->
+                Downloader.download(media.url, media.headers, temp, mode) { percent ->
                     onProgress(percent, "正在下载无水印视频" + qualityText + "...")
                 }
                 MediaCache.save(context, originalUrl, temp)
@@ -110,11 +133,9 @@ object TaskRunner {
                     mode = TaskMode.TEXT,
                     headers = if (cached == null) media.headers else emptyMap(),
                     titleHint = media.title,
-                    onProgress = { p, text -> onProgress((p * 75) / 100, text) },
+                    onProgress = { p, detail -> onProgress((p * 70) / 100, detail) },
                 )
-                val text = AsrEngine.transcribe(context, result.file.absolutePath) { p, detail ->
-                    onProgress(75 + (p * 25) / 100, detail)
-                }
+            val text = transcribeText(context, result.file.absolutePath, onProgress)
                 completeText(text)
             }
         }
@@ -128,7 +149,7 @@ object TaskRunner {
         val tempFiles = mutableListOf<File>()
         media.images.forEachIndexed { index, item ->
             val temp = File(context.cacheDir, "video_link_tool_" + System.currentTimeMillis() + "_" + index + "." + item.ext)
-            Downloader.download(item.url, media.headers, temp) { p ->
+            Downloader.download(item.url, media.headers, temp, TaskMode.VIDEO) { p ->
                 val overall = ((index * 100 + p) / media.images.size).coerceIn(0, 100)
                 onProgress(overall, "正在保存图集 " + (index + 1) + "/" + media.images.size + "...")
             }
@@ -153,14 +174,12 @@ object TaskRunner {
             mode = mode,
             titleHint = source.titleHint,
             onProgress = { p, text ->
-                if (mode == TaskMode.TEXT) onProgress((p * 75) / 100, text) else onProgress(p, text)
+                if (mode == TaskMode.TEXT) onProgress((p * 70) / 100, text) else onProgress(p, text)
             },
         )
         if (mode == TaskMode.VIDEO) MediaCache.save(context, url, result.file)
         if (mode == TaskMode.TEXT) {
-            val text = AsrEngine.transcribe(context, result.file.absolutePath) { p, detail ->
-                onProgress(75 + (p * 25) / 100, detail)
-            }
+            val text = transcribeText(context, result.file.absolutePath, onProgress)
             completeText(text)
         } else {
             val mime = if (mode == TaskMode.VIDEO) "video/mp4" else "audio/mp4"

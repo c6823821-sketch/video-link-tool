@@ -16,11 +16,18 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
+/**
+ * Runs one job per function. 下视频 / 下音频 / 转文字 each get their own coroutine,
+ * their own notification and their own progress channel, so they can run together
+ * and never overwrite each other's display.
+ */
 class TaskService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var job: Job? = null
-    private val generation = java.util.concurrent.atomic.AtomicInteger(0)
+    private val jobs = ConcurrentHashMap<TaskMode, Job>()
+    private val generations = ConcurrentHashMap<TaskMode, AtomicInteger>()
 
     companion object {
         private const val CHANNEL_ID = "video_link_tool_tasks"
@@ -47,28 +54,26 @@ class TaskService : Service() {
         val mode = TaskMode.fromKey(intent?.getStringExtra(EXTRA_MODE))
         val input = intent?.getStringExtra(EXTRA_INPUT).orEmpty()
         if (input.isBlank()) {
-            stopSelf()
+            stopIfIdle()
             return START_NOT_STICKY
         }
-        startForegroundCompat("准备中...", 0)
+        startForegroundCompat(mode, "准备中...", 0)
 
-        // Kill whatever is still running: cancelling the coroutine alone leaves the
-        // native yt-dlp process and the HTTP download going, which is what made the
-        // progress bars mix up and what ran the phone out of memory.
-        TaskControl.cancel()
-        job?.cancel()
-        val token = generation.incrementAndGet()
-        val processId = "video-link-tool-" + token
-        TaskControl.begin(processId)
+        TaskControl.cancel(mode)
+        jobs[mode]?.cancel()
+        val counter = generations.getOrPut(mode) { AtomicInteger(0) }
+        val token = counter.incrementAndGet()
+        val processId = "video-link-tool-" + mode.key + "-" + token
+        TaskControl.begin(mode, processId)
 
-        job = scope.launch {
-            val alive = { generation.get() == token && !TaskControl.cancelled }
+        val job = scope.launch {
+            val alive = { counter.get() == token && !TaskControl.isCancelled(mode) }
             try {
                 if (alive()) TaskBus.update(mode, RunState.RUNNING, 0, "开始处理", "正在解析链接...")
                 TaskRunner.run(this@TaskService, mode, input) { progress, detail ->
                     if (alive()) {
                         TaskBus.update(mode, RunState.RUNNING, progress, detail, "任务进行中")
-                        updateNotification(detail, progress)
+                        updateNotification(mode, detail, progress)
                     }
                 }
             } catch (e: NeedCookiesException) {
@@ -79,22 +84,31 @@ class TaskService : Service() {
                     TaskBus.update(mode, RunState.ERROR, 0, "处理失败", message)
                 }
             } finally {
-                TaskControl.finish(processId)
-                if (generation.get() == token) {
-                    stopForegroundCompat()
-                    stopSelf()
+                TaskControl.finish(mode, processId)
+                if (counter.get() == token) {
+                    jobs.remove(mode)
+                    if (jobs.isEmpty()) stopIfIdle()
                 }
             }
         }
+        jobs[mode] = job
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        job?.cancel()
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
         scope.cancel()
         super.onDestroy()
+    }
+
+    private fun stopIfIdle() {
+        if (jobs.isEmpty()) {
+            stopForegroundCompat()
+            stopSelf()
+        }
     }
 
     private fun createChannel() {
@@ -105,29 +119,35 @@ class TaskService : Service() {
         }
     }
 
-    private fun startForegroundCompat(text: String, progress: Int) {
-        val notification = buildNotification(text, progress)
+    private fun startForegroundCompat(mode: TaskMode, text: String, progress: Int) {
+        val notification = buildNotification(mode, text, progress)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(NOTIFICATION_ID + mode.ordinal, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(NOTIFICATION_ID + mode.ordinal, notification)
         }
     }
 
-    private fun updateNotification(text: String, progress: Int) {
+    private fun updateNotification(mode: TaskMode, text: String, progress: Int) {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification(text, progress))
+        manager.notify(NOTIFICATION_ID + mode.ordinal, buildNotification(mode, text, progress))
     }
 
-    private fun buildNotification(text: String, progress: Int) =
+    private fun buildNotification(mode: TaskMode, text: String, progress: Int) =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("视频工具箱")
+            .setContentTitle("视频工具箱 · " + modeLabel(mode))
             .setContentText(text)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setProgress(100, progress.coerceIn(0, 100), progress <= 0)
             .build()
+
+    private fun modeLabel(mode: TaskMode): String = when (mode) {
+        TaskMode.VIDEO -> "下视频"
+        TaskMode.AUDIO -> "下音频"
+        TaskMode.TEXT -> "转文字"
+    }
 
     private fun stopForegroundCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

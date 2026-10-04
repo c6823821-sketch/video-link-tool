@@ -1,6 +1,7 @@
 package com.c6823821.videolinktool
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 enum class RunState { IDLE, RUNNING, SUCCESS, ERROR, NEED_COOKIE }
 
@@ -16,11 +17,22 @@ data class TaskUiState(
     val previewUri: String? = null,
 )
 
+/**
+ * Every function keeps its own state, so 下视频 and 转文字 can run at the same time
+ * and each page shows only its own progress.
+ */
 object TaskBus {
-    val state = MutableStateFlow(TaskUiState())
+    private val _states = MutableStateFlow<Map<TaskMode, TaskUiState>>(emptyMap())
+    val states: StateFlow<Map<TaskMode, TaskUiState>> = _states
+
+    fun stateOf(mode: TaskMode): TaskUiState = _states.value[mode] ?: TaskUiState(mode = mode)
+
+    fun isRunning(mode: TaskMode): Boolean = stateOf(mode).state == RunState.RUNNING
+
+    fun anyRunning(): Boolean = _states.value.values.any { it.state == RunState.RUNNING }
 
     fun reset(mode: TaskMode) {
-        state.value = TaskUiState(mode = mode)
+        _states.value = _states.value + (mode to TaskUiState(mode = mode))
     }
 
     fun update(
@@ -34,16 +46,18 @@ object TaskBus {
         text: String? = null,
         previewUri: String? = null,
     ) {
-        state.value = TaskUiState(
-            mode = mode,
-            state = stateValue,
-            progress = progress.coerceIn(0, 100),
-            title = title,
-            detail = detail,
-            outputUri = outputUri,
-            outputPath = outputPath,
-            text = text,
-            previewUri = previewUri,
-        )
+        _states.value = _states.value + (
+            mode to TaskUiState(
+                mode = mode,
+                state = stateValue,
+                progress = progress.coerceIn(0, 100),
+                title = title,
+                detail = detail,
+                outputUri = outputUri,
+                outputPath = outputPath,
+                text = text,
+                previewUri = previewUri,
+            )
+            )
     }
 }

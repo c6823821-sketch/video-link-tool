@@ -26,7 +26,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var currentMode = TaskMode.VIDEO
     private var pendingInstall: java.io.File? = null
-    private val modeStates = mutableMapOf<TaskMode, TaskUiState>()
     private var displayedState = TaskUiState()
     private var previewKey: String? = null
 
@@ -72,7 +71,9 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                TaskBus.state.collect { render(it) }
+                TaskBus.states.collect { states ->
+                    render(states[currentMode] ?: TaskUiState(mode = currentMode))
+                }
             }
         }
     }
@@ -86,13 +87,13 @@ class MainActivity : AppCompatActivity() {
     private fun startCurrentTaskIfPossible() {
         val input = binding.etUrl.text?.toString()?.trim().orEmpty()
         if (input.isBlank()) return
-        val running = TaskBus.state.value
+        val running = TaskBus.stateOf(currentMode)
         if (running.state == RunState.RUNNING) {
             AlertDialog.Builder(this)
                 .setTitle("还有一个任务没做完")
                 .setMessage("现在正在进行：" + running.detail + "。要么等它做完，要么中断它再开始新的。")
                 .setPositiveButton("中断并开始新的") { _, _ ->
-                    TaskControl.cancel()
+                    TaskControl.cancel(currentMode)
                     startTask(input)
                 }
                 .setNegativeButton("继续等它做完", null)
@@ -115,8 +116,7 @@ class MainActivity : AppCompatActivity() {
             TaskMode.TEXT -> "只输出文字，结果显示在下方框里，不自动保存。模型内置，不用下载。"
         }
         binding.tvModeHint.text = hint
-        val runningState = TaskBus.state.value
-        render(if (runningState.state == RunState.RUNNING) runningState else modeStates[mode] ?: TaskUiState(mode = mode))
+        render(TaskBus.stateOf(mode))
         binding.btnRun.text = when (mode) {
             TaskMode.VIDEO -> "开始下载视频"
             TaskMode.AUDIO -> "开始提取音频"
@@ -126,7 +126,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun render(state: TaskUiState) {
         displayedState = state
-        modeStates[state.mode] = state
         binding.progressBar.progress = state.progress
         binding.tvProgressPercent.text = state.progress.toString() + "%"
         binding.tvStatus.text = state.title
