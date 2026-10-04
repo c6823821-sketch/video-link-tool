@@ -10,6 +10,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.concurrent.TimeUnit
 
 object UpdateManager {
     private const val REPO = "c6823821-sketch/video-link-tool"
@@ -19,6 +20,15 @@ object UpdateManager {
     private const val PREFS = "video_link_tool_update"
     private const val KEY_SKIP = "skipped_version"
 
+    /**
+     * 加速线路优先，github.com 直连放最后。
+     *
+     * 实测（国内）：gh-proxy 约 480 KB/s、ghfast 约 400 KB/s，而 github.com 直连只有 40 KB/s
+     * 甚至直接卡死。以前把直连排在第一位，所以更新一直停在 0%~1%。
+     * 空字符串代表不走代理的直连地址。
+     */
+    private val MIRRORS = listOf("https://gh-proxy.com/", "https://ghfast.top/", "")
+
     data class UpdateInfo(val version: String, val downloadUrls: List<String>)
 
     fun check(context: Context): UpdateInfo? {
@@ -26,17 +36,14 @@ object UpdateManager {
         val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
         if (compareVersion(tag, current) <= 0) return null
         val clean = tag.removePrefix("v").removePrefix("V")
-        val arm64 = "https://github.com/$REPO/releases/download/v$clean/VideoLinkTool-v$clean-arm64.apk"
-        val universal = "https://github.com/$REPO/releases/download/v$clean/VideoLinkTool-v$clean.apk"
-        // Newer releases ship a smaller arm64-only package; older ones only have the universal file.
+        val base = "https://github.com/$REPO/releases/download/v$clean/"
+        val names = mutableListOf<String>()
+        if (isArm64()) names += "VideoLinkTool-v$clean-arm64.apk"
+        names += "VideoLinkTool-v$clean.apk"
         val urls = mutableListOf<String>()
-        if (isArm64()) {
-            urls += arm64
-            urls += "https://gh-proxy.com/$arm64"
+        names.forEach { name ->
+            MIRRORS.forEach { mirror -> urls += mirror + base + name }
         }
-        urls += universal
-        urls += "https://gh-proxy.com/$universal"
-        urls += "https://ghfast.top/$universal"
         return UpdateInfo(version = clean, downloadUrls = urls)
     }
 
@@ -47,36 +54,37 @@ object UpdateManager {
         prefs(context).edit().putString(KEY_SKIP, version).apply()
     }
 
-    /** Downloaded and verified update package for [version], if we already have one. */
     fun cachedApk(context: Context, version: String): File? {
         val file = apkFile(context, version)
         return if (file.exists() && isValidApk(file)) file else null
     }
 
     /**
-     * Downloads the update, resuming a partial file when the server supports Range
-     * requests. On a slow connection this means a dropped download continues instead
-     * of starting the whole 140MB again.
+     * Downloads the update. Every mirror is tried in turn; a stalled connection is
+     * dropped after 25 seconds of silence so one dead route cannot freeze everything.
      */
-    fun download(context: Context, info: UpdateInfo, onProgress: (Int) -> Unit): File {
+    fun download(context: Context, info: UpdateInfo, onProgress: (Int, String) -> Unit): File {
         cachedApk(context, info.version)?.let { return it }
         val target = apkFile(context, info.version)
         val partial = File(target.parentFile, target.name + ".part")
 
         var lastError: Exception? = null
         for (url in info.downloadUrls) {
-            repeat(2) {
+            repeat(2) { attempt ->
                 try {
                     fetch(url, partial, onProgress)
-                    if (!isValidApk(partial)) throw IllegalStateException("更新包下载不完整")
+                    if (!isValidApk(partial)) throw IllegalStateException("更新包不完整")
                     if (target.exists()) target.delete()
                     if (!partial.renameTo(target)) {
                         partial.copyTo(target, overwrite = true)
                         partial.delete()
                     }
+                    onProgress(100, "下载完成，正在打开安装")
                     return target
                 } catch (e: Exception) {
                     lastError = e
+                    partial.delete()
+                    if (attempt == 1) onProgress(-1, "这条线路不行，换下一条…")
                 }
             }
         }
@@ -85,42 +93,52 @@ object UpdateManager {
         )
     }
 
-    private fun fetch(url: String, target: File, onProgress: (Int) -> Unit) {
+    private fun fetch(url: String, target: File, onProgress: (Int, String) -> Unit) {
         val existing = if (target.exists()) target.length() else 0L
         val builder = Request.Builder()
             .url(url)
             .header("User-Agent", HttpClient.MOBILE_UA)
         if (existing > 0) builder.header("Range", "bytes=$existing-")
-        HttpClient.client.newCall(builder.get().build()).execute().use { response ->
-            if (!response.isSuccessful) throw IllegalStateException("下载失败：HTTP ${response.code}")
+        val client = HttpClient.client.newBuilder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
+            .build()
+        var lastMb = -1
+        client.newCall(builder.get().build()).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("下载失败：HTTP " + response.code)
             val body = response.body ?: throw IllegalStateException("下载响应为空")
             val append = existing > 0L && response.code == 206
             val startAt = if (append) existing else 0L
-            val total = if (response.code == 206) contentRangeTotal(response.header("Content-Range")) else body.contentLength()
-            RandomAccessFile(target, "rw").use { raf ->
-                if (!append) raf.setLength(0)
-                raf.seek(startAt)
+            val total = if (response.code == 206) {
+                contentRangeTotal(response.header("Content-Range"))
+            } else {
+                body.contentLength()
+            }
+            RandomAccessFile(target, "rw").use { file ->
+                if (!append) file.setLength(0)
+                file.seek(startAt)
                 var written = startAt
-                var lastPercent = -1
                 body.byteStream().use { input ->
                     val buffer = ByteArray(256 * 1024)
                     while (true) {
                         val count = input.read(buffer)
                         if (count < 0) break
-                        raf.write(buffer, 0, count)
+                        file.write(buffer, 0, count)
                         written += count
-                        if (total > 0) {
-                            val percent = ((written * 100) / total).toInt().coerceIn(0, 100)
-                            if (percent != lastPercent) {
-                                lastPercent = percent
-                                onProgress(percent)
+                        val mb = (written / (1024 * 1024)).toInt()
+                        if (mb != lastMb) {
+                            lastMb = mb
+                            val percent = if (total > 0) ((written * 100) / total).toInt().coerceIn(0, 99) else -1
+                            val detail = if (total > 0) {
+                                "已下载 " + readable(written) + " / " + readable(total)
+                            } else {
+                                "已下载 " + readable(written)
                             }
+                            onProgress(percent, detail)
                         }
                     }
                 }
-                if (total > 0 && raf.length() != total) {
-                    throw IllegalStateException("连接中断，已下载 " + readable(raf.length()) + " / " + readable(total))
-                }
+                if (total > 0 && file.length() != total) throw IllegalStateException("连接中断，已下载 " + readable(file.length()))
             }
         }
     }
@@ -134,7 +152,6 @@ object UpdateManager {
         context.startActivity(intent)
     }
 
-    /** Launches the system package installer. Returns false when we had to ask for permission first. */
     fun install(context: Context, file: File): Boolean {
         if (!isInstallAllowed(context)) {
             openInstallPermission(context)
@@ -156,18 +173,19 @@ object UpdateManager {
         return File(dir, "VideoLinkTool-$version.apk")
     }
 
-    private fun prefs(context: Context) =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    private fun contentRangeTotal(header: String?): Long {
-        val value = header?.substringAfterLast('/')?.trim().orEmpty()
-        return value.toLongOrNull() ?: -1L
+    private fun contentRangeTotal(header: String?): Long =
+        header?.substringAfterLast('/')?.trim()?.toLongOrNull() ?: -1L
+
+    private fun readable(bytes: Long): String {
+        val mb = bytes.toDouble() / (1024 * 1024)
+        return if (mb >= 1) String.format(java.util.Locale.US, "%.1fMB", mb) else (bytes / 1024).toString() + "KB"
     }
 
-    private fun readable(bytes: Long): String =
-        if (bytes >= 1024 * 1024) (bytes / 1024 / 1024).toString() + "MB" else (bytes / 1024).toString() + "KB"
+    private fun isArm64(): Boolean =
+        Build.SUPPORTED_ABIS.any { it.equals("arm64-v8a", ignoreCase = true) }
 
-    /** A finished APK always carries a zip end-of-central-directory record near the end. */
     fun isValidApk(file: File): Boolean {
         if (!file.exists() || file.length() < 1024) return false
         val tailLength = file.length().coerceAtMost(70_000L).toInt()
@@ -186,8 +204,6 @@ object UpdateManager {
         return false
     }
 
-    private fun isArm64(): Boolean =
-        Build.SUPPORTED_ABIS.any { it.equals("arm64-v8a", ignoreCase = true) }
     private fun latestTag(): String? {
         latestTagFromPage()?.let { return it }
         latestTagFromApi()?.let { return it }

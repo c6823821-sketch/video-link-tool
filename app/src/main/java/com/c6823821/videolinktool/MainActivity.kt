@@ -222,13 +222,21 @@ class MainActivity : AppCompatActivity() {
         binding.progressBar.visibility = android.view.View.VISIBLE
         binding.tvProgressPercent.visibility = android.view.View.VISIBLE
         binding.tvStatus.text = "正在下载更新"
+        binding.progressBar.isIndeterminate = false
         binding.btnCheckUpdate.isEnabled = false
         lifecycleScope.launch(Dispatchers.IO) {
             val result = runCatching {
-                UpdateManager.download(this@MainActivity, info) { progress ->
+                UpdateManager.download(this@MainActivity, info) { percent, detail ->
                     runOnUiThread {
-                        binding.progressBar.progress = progress
-                        binding.tvProgressPercent.text = progress.toString() + "%"
+                        if (detail.isNotBlank()) binding.tvStatus.text = detail
+                        if (percent < 0) {
+                            binding.progressBar.isIndeterminate = true
+                            binding.tvProgressPercent.text = ""
+                        } else {
+                            binding.progressBar.isIndeterminate = false
+                            binding.progressBar.progress = percent
+                            binding.tvProgressPercent.text = percent.toString() + "%"
+                        }
                     }
                 }
             }
