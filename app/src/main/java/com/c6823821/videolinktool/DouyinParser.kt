@@ -74,20 +74,22 @@ object DouyinParser {
 
     private fun chooseVideo(video: JSONObject?): Pair<String, String> {
         if (video == null) return "" to ""
-        data class Candidate(val url: String, val pixels: Long, val bitrate: Long, val quality: String)
+        data class Candidate(val url: String, val pixels: Long, val bitrate: Long, val quality: String, val hevc: Boolean)
         val candidates = mutableListOf<Candidate>()
         val bitRates = video.optJSONArray("bit_rate")
         if (bitRates != null) {
             for (i in 0 until bitRates.length()) {
                 val item = bitRates.optJSONObject(i) ?: continue
-                if (item.optInt("is_h265", 0) == 1) continue
                 val play = item.optJSONObject("play_addr") ?: continue
                 var url = play.optJSONArray("url_list")?.optString(0).orEmpty().replace("playwm", "play")
                 if (url.isBlank()) continue
                 val width = play.optLong("width")
                 val height = play.optLong("height")
                 val quality = if (height > 0) height.toString() + "P" else item.optString("gear_name")
-                candidates += Candidate(url, width * height, item.optLong("bit_rate"), quality)
+                // Douyin labels the better renditions as H.265. Skipping them threw away the
+                // whole 720p tier, which is why downloads fell back to a smaller-but-worse 576P file.
+                val hevc = item.optInt("is_h265", 0) == 1
+                candidates += Candidate(url, width * height, item.optLong("bit_rate"), quality, hevc)
             }
         }
         val fallback = video.optJSONObject("play_addr_h264") ?: video.optJSONObject("play_addr")
@@ -102,12 +104,18 @@ object DouyinParser {
                 width * fallbackHeight,
                 0L,
                 if (fallbackHeight > 0) fallbackHeight.toString() + "P" else "原画",
+                false,
             )
         }
         if (candidates.isEmpty() && fallbackUrl.isNotBlank()) {
             return (if (fallbackHeight > 0) fallbackHeight.toString() + "P" else "原画") to fallbackUrl
         }
-        val best = candidates.maxWithOrNull(compareBy<Candidate> { it.pixels }.thenBy { it.bitrate })
+        // highest resolution wins; at the same resolution prefer H.264 for widest playback support
+        val best = candidates.maxWithOrNull(
+            compareBy<Candidate> { it.pixels }
+                .thenBy { if (it.hevc) 0 else 1 }
+                .thenBy { it.bitrate }
+        )
         return if (best != null) best.quality.ifBlank { "原画" } to best.url else "" to fallbackUrl
     }
 
