@@ -16,15 +16,15 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Cloud transcription through the same interface the 剪映 desktop app uses for
- * "识别字幕". It needs no account and no third party signing service: the request
+ * Cloud transcription backing the 转文字 function.
+ * Needs no account and no third party signing service: the request
  * signature is computed locally, and every endpoint is a mainland China host, so
  * no VPN is involved.
  *
  * Flow: upload_sign -> get STS keys -> sign a VOD upload request -> PUT the audio
  * -> submit an audio_subtitle job -> poll until the utterances come back.
  */
-object JianyingAsr {
+object CloudAsr {
     private const val API_BASE = "https://lv-pc-api-sinfonlinec.ulikecam.com/lv/v1"
     private const val APPVR = "6.6.0"
     private const val PF = "4"
@@ -41,10 +41,10 @@ object JianyingAsr {
             ?: throw IllegalStateException("音频文件不存在")
         if (binary.isEmpty()) throw IllegalStateException("音频是空的")
         val tdid = deviceId()
-        onProgress(2, "上传音频到剪映云...")
+        onProgress(2, "正在准备识别...")
         val crc = crc32Hex(binary)
         val storeUri = upload(binary, crc, tdid)
-        onProgress(50, "剪映正在识别...")
+        onProgress(50, "正在识别语音...")
 
         val songs = JSONArray().put(
             JSONObject().put("end_time", 6000).put("id", "").put("start_time", 0)
@@ -59,7 +59,7 @@ object JianyingAsr {
             .put("words_per_line", WORDS_PER_LINE)
         val submit = apiPost("audio_subtitle/submit", payload, tdid)
         val id = submit.optJSONObject("data")?.optString("id").orEmpty()
-        if (id.isBlank()) throw IllegalStateException("剪映提交任务失败")
+        if (id.isBlank()) throw IllegalStateException("识别任务提交失败")
 
         val deadline = System.currentTimeMillis() + QUERY_TIMEOUT_MS
         var percent = 52
@@ -71,8 +71,8 @@ object JianyingAsr {
             )
             val segments = parseSegments(query)
             if (segments.isNotEmpty()) return segments
-            if (System.currentTimeMillis() > deadline) throw IllegalStateException("剪映识别超时")
-            onProgress(percent.coerceAtMost(96), "剪映正在识别...")
+            if (System.currentTimeMillis() > deadline) throw IllegalStateException("识别超时")
+            onProgress(percent.coerceAtMost(96), "正在识别语音...")
             percent += 2
             Thread.sleep(1200)
         }
@@ -146,12 +146,12 @@ object JianyingAsr {
 
     private fun upload(binary: ByteArray, crc: String, tdid: String): String {
         val data = apiPost("upload_sign", JSONObject().put("biz", "pc-recognition"), tdid)
-            .optJSONObject("data") ?: throw IllegalStateException("剪映上传签名失败")
+            .optJSONObject("data") ?: throw IllegalStateException("识别服务返回异常")
         val accessKey = data.optString("access_key_id")
         val secretKey = data.optString("secret_access_key")
         val sessionToken = data.optString("session_token")
         if (accessKey.isBlank() || secretKey.isBlank() || sessionToken.isBlank()) {
-            throw IllegalStateException("剪映上传签名不完整")
+            throw IllegalStateException("识别服务返回异常")
         }
 
         val params = "Action=ApplyUploadInner&FileSize=" + binary.size +
@@ -178,15 +178,15 @@ object JianyingAsr {
             JSONObject(response.body?.string().orEmpty())
         }
         val address = apply.optJSONObject("Result")?.optJSONObject("UploadAddress")
-            ?: throw IllegalStateException("剪映没有返回上传地址")
+            ?: throw IllegalStateException("获取上传地址失败")
         val info = address.optJSONArray("StoreInfos")?.optJSONObject(0)
-            ?: throw IllegalStateException("剪映上传信息为空")
+            ?: throw IllegalStateException("上传信息不完整")
         val host = address.optJSONArray("UploadHosts")?.optString(0).orEmpty()
         val storeUri = info.optString("StoreUri")
         val uploadAuth = info.optString("Auth")
         val uploadId = info.optString("UploadID")
         if (host.isBlank() || storeUri.isBlank() || uploadAuth.isBlank() || uploadId.isBlank()) {
-            throw IllegalStateException("剪映上传信息不完整")
+            throw IllegalStateException("上传信息不完整")
         }
 
         val partRequest = Request.Builder()
@@ -231,9 +231,9 @@ object JianyingAsr {
         return HttpClient.client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             val json = runCatching { JSONObject(text) }.getOrNull()
-                ?: throw IllegalStateException("剪映返回了无法解析的内容（HTTP " + response.code + "）")
+                ?: throw IllegalStateException("识别服务返回异常（HTTP " + response.code + "）")
             if (json.optString("ret") != "0") {
-                throw IllegalStateException("剪映接口报错：" + json.optString("errmsg") + " (ret=" + json.optString("ret") + ")")
+                throw IllegalStateException("识别服务异常 (ret=" + json.optString("ret") + ")")
             }
             json
         }

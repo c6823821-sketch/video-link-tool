@@ -35,23 +35,23 @@ object TaskRunner {
         )
     }
 
-    /** Prefer the 剪映 cloud engine; fall back to the bundled offline model. */
+    /** Prefer the cloud engine; fall back to the bundled offline model. */
     private fun transcribeText(
         context: Context,
         wavPath: String,
         onProgress: (Int, String) -> Unit,
     ): String {
         val cloud = runCatching {
-            val segments = JianyingAsr.transcribe(wavPath) { p, detail ->
+            val segments = CloudAsr.transcribe(wavPath) { p, detail ->
                 onProgress(70 + (p * 8) / 100, detail)
             }
-            if (segments.isEmpty()) "" else JianyingAsr.compose(segments)
+            if (segments.isEmpty()) "" else CloudAsr.compose(segments)
         }.getOrNull()
         if (!cloud.isNullOrBlank()) {
-            onProgress(100, "剪映云识别完成")
+            onProgress(100, "识别完成")
             return cloud
         }
-        onProgress(78, "云端识别不可用，改用本地识别...")
+        onProgress(78, "正在识别语音...")
         return AsrEngine.transcribe(context, wavPath) { p, detail ->
             onProgress(78 + (p * 22) / 100, detail)
         }
@@ -102,9 +102,9 @@ object TaskRunner {
             TaskMode.VIDEO -> {
                 if (media.url.isBlank()) throw IllegalStateException("没有找到可下载的视频地址")
                 val temp = File(context.cacheDir, "video_link_tool_" + System.currentTimeMillis() + "." + media.ext)
-                val qualityText = if (media.quality.isNotBlank()) "（" + media.quality + "）" else ""
+                
                 Downloader.download(media.url, media.headers, temp, mode) { percent ->
-                    onProgress(percent, "正在下载无水印视频" + qualityText + "...")
+                    onProgress(percent, "正在下载无水印视频...")
                 }
                 MediaCache.save(context, originalUrl, temp)
                 val saved = OutputStore.saveFile(context, temp, media.title, "video/mp4")
