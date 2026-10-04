@@ -1,34 +1,111 @@
 package com.c6823821.videolinktool
 
 import android.content.Context
-import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OfflineModelConfig
-import com.k2fsa.sherpa.onnx.OfflineParaformerModelConfig
-import com.k2fsa.sherpa.onnx.OfflineRecognizer
-import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
-import com.k2fsa.sherpa.onnx.WaveReader
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sqrt
+import org.json.JSONObject
+import org.vosk.Recognizer
+import java.io.BufferedInputStream
+import java.io.FileInputStream
+import java.io.InputStream
 
 /**
- * Offline speech to text with sherpa-onnx + Paraformer (much more accurate on
- * Mandarin than the previous Vosk model).
+ * Offline speech to text with Vosk.
  *
- * Paraformer is a non-streaming model, so feeding it a whole ten minute video in
- * one shot blows up memory and kills the process. The audio is therefore cut at
- * silence into sentence sized pieces, and any piece that is still too long is
- * split at its quietest frame before decoding.
+ * Reads the WAV produced by ffmpeg, locates the "data" chunk (ffmpeg may write a
+ * LIST chunk before it, so the payload does not always start at byte 44) and feeds
+ * the raw 16 kHz mono PCM into the recognizer on this thread.
+ *
+ * The Chinese model returns bare words with timestamps but no punctuation, so we
+ * rebuild sentences from the pauses between words and pick an ending mark.
  */
 object AsrEngine {
-    private const val SAMPLE_RATE = 16000
-    private const val HOP = 160 // 10 ms
-    private const val WINDOW = 400 // 25 ms
-    private const val SENTENCE_SILENCE_MS = 450
-    private const val MAX_SEGMENT_MS = 22_000
-    private const val MAX_CLAUSE = 30
+    private data class Word(val text: String, val start: Double, val end: Double)
 
-    private data class Segment(val start: Int, val end: Int, val sentenceEnd: Boolean)
+    private const val SENTENCE_GAP = 0.42
+    private const val CLAUSE_GAP = 0.15
+    private const val MIN_CLAUSE = 4
+    private const val MAX_CLAUSE = 40
+
+    fun transcribe(
+        context: Context,
+        wavPath: String,
+        onProgress: (Int, String) -> Unit,
+    ): String {
+        onProgress(2, "初始化离线语音模型...")
+        val model = ModelManager.load(context, onProgress)
+        onProgress(28, "正在识别语音 0%")
+
+        val recognizer = Recognizer(model, 16000.0f)
+        recognizer.setWords(true)
+        val words = mutableListOf<Word>()
+        var fallbackText = ""
+        try {
+            FileInputStream(wavPath).use { raw ->
+                BufferedInputStream(raw, 1 shl 16).use { input ->
+                    val dataSize = skipToWavData(input)
+                    recognize(recognizer, input, dataSize, words, onProgress) { plain ->
+                        if (plain.isNotBlank()) fallbackText = plain
+                    }
+                }
+            }
+        } finally {
+            runCatching { recognizer.close() }
+        }
+
+        val result = if (words.isNotEmpty()) punctuate(words) else fallbackText.trim()
+        if (result.isBlank()) {
+            throw IllegalStateException("没有识别到文字，可能这段视频里没有说话声")
+        }
+        onProgress(100, "识别完成")
+        return result
+    }
+
+    private fun recognize(
+        recognizer: Recognizer,
+        input: InputStream,
+        dataSize: Long,
+        words: MutableList<Word>,
+        onProgress: (Int, String) -> Unit,
+        onPlain: (String) -> Unit,
+    ) {
+        val buffer = ByteArray(1 shl 13)
+        var readTotal = 0L
+        var lastPercent = -1
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            readTotal += read
+            if (recognizer.acceptWaveForm(buffer, read)) {
+                collect(recognizer.result, words, onPlain)
+            }
+            if (dataSize > 0) {
+                val percent = (readTotal * 100 / dataSize).toInt().coerceIn(0, 99)
+                if (percent != lastPercent) {
+                    lastPercent = percent
+                    onProgress(30 + percent * 68 / 100, "正在识别语音 " + percent + "%")
+                }
+            }
+        }
+        collect(recognizer.finalResult, words, onPlain)
+    }
+
+    private fun collect(json: String?, words: MutableList<Word>, onPlain: (String) -> Unit) {
+        if (json.isNullOrBlank()) return
+        val obj = runCatching { JSONObject(json) }.getOrNull() ?: return
+        obj.optString("text", "").takeIf { it.isNotBlank() }?.let(onPlain)
+        val array = obj.optJSONArray("result") ?: return
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val word = item.optString("word").trim()
+            if (word.isEmpty()) continue
+            words.add(
+                Word(
+                    text = word,
+                    start = item.optDouble("start", -1.0),
+                    end = item.optDouble("end", -1.0),
+                )
+            )
+        }
+    }
 
     private val questionTails = listOf("吗", "呢", "吧", "么")
     private val exclaimTails = listOf("啊", "呀", "哇", "啦", "哦", "唉", "哎")
@@ -36,182 +113,136 @@ object AsrEngine {
         "为什么", "什么", "怎么", "哪儿", "哪里", "哪个", "哪些", "多少", "几个", "几点",
         "多久", "多大", "能不能", "是不是", "有没有", "谁",
     )
-    private val breakBefore = listOf(
-        "但是", "不过", "所以", "因为", "同时", "而且", "并且", "然后", "如果", "虽然",
-        "只要", "由于", "因此", "于是", "另外", "以及", "其实", "反正", "而", "结果",
+    private val clauseStarters = listOf(
+        "但是", "不过", "所以", "因为", "同时", "并且", "然后", "如果", "虽然", "只要",
+        "由于", "因此", "于是", "另外", "以及", "而且", "相关", "目前", "现在", "长期",
+        "最后", "而",
     )
-    private val softBreakChars = "了的是在有就都也还又而但并或及与和把被让给对从到中上"
 
-    fun transcribe(
-        context: Context,
-        wavPath: String,
-        onProgress: (Int, String) -> Unit,
-    ): String {
-        onProgress(1, "准备离线语音模型...")
-        val paths = ModelManager.prepare(context, onProgress)
-
-        onProgress(16, "读取音频...")
-        val wave = WaveReader.readWave(wavPath)
-        if (wave.samples.isEmpty()) throw IllegalStateException("音频是空的")
-        if (wave.sampleRate != SAMPLE_RATE) {
-            throw IllegalStateException("音频采样率不是 16kHz（实际 " + wave.sampleRate + "），无法识别")
-        }
-
-        val segments = splitSegments(wave.samples)
-        onProgress(20, "加载语音模型...")
-        val config = OfflineRecognizerConfig(
-            featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
-            modelConfig = OfflineModelConfig(
-                paraformer = OfflineParaformerModelConfig(model = paths.model.absolutePath),
-                tokens = paths.tokens.absolutePath,
-                numThreads = 2,
-                provider = "cpu",
-            ),
-        )
-        val recognizer = OfflineRecognizer(assetManager = null, config = config)
-        val pieces = ArrayList<String>(segments.size)
-        try {
-            segments.forEachIndexed { index, segment ->
-                val chunk = wave.samples.copyOfRange(segment.start, segment.end)
-                val stream = recognizer.createStream()
-                try {
-                    stream.acceptWaveform(chunk, SAMPLE_RATE)
-                    recognizer.decode(stream)
-                    val text = recognizer.getResult(stream).text.trim()
-                    if (text.isNotEmpty()) pieces.add(text)
-                } finally {
-                    stream.release()
-                }
-                onProgress(
-                    (22 + (index + 1) * 76 / segments.size).coerceIn(22, 98),
-                    "正在识别语音 " + ((index + 1) * 100 / segments.size) + "%",
-                )
-            }
-        } finally {
-            recognizer.release()
-        }
-
-        val result = compose(pieces)
-        if (result.isBlank()) throw IllegalStateException("没有识别到文字，可能这段视频里没有说话声")
-        onProgress(100, "识别完成")
-        return result
-    }
-
-    /** Sentence sized slices: cut on real silence, then force-split anything too long. */
-    private fun splitSegments(samples: FloatArray): List<Segment> {
-        val frameCount = max(1, (samples.size - WINDOW) / HOP + 1)
-        val rms = FloatArray(frameCount)
-        for (frame in 0 until frameCount) {
-            val from = frame * HOP
-            val to = min(from + WINDOW, samples.size)
-            var sum = 0.0
-            for (i in from until to) {
-                val v = samples[i].toDouble()
-                sum += v * v
-            }
-            rms[frame] = sqrt(sum / max(1, to - from)).toFloat()
-        }
-        val sorted = rms.clone()
-        sorted.sort()
-        val noiseFloor = sorted[(sorted.size * 0.1f).toInt().coerceIn(0, sorted.size - 1)]
-        val threshold = max(noiseFloor * 4f, 0.004f)
-
-        val cuts = mutableListOf<Int>()
-        var index = 0
-        while (index < frameCount) {
-            if (rms[index] <= threshold) {
-                val start = index
-                while (index < frameCount && rms[index] <= threshold) index++
-                val lengthMs = (index - start) * 10
-                if (lengthMs >= SENTENCE_SILENCE_MS && start > 0 && index < frameCount) {
-                    cuts.add(((start + index) / 2) * HOP)
-                }
-            } else {
-                index++
-            }
-        }
-        cuts.add(samples.size)
-
-        val segments = mutableListOf<Segment>()
-        var from = 0
-        cuts.forEach { cut ->
-            var start = from
-            if (cut - start > 1) {
-                // force-split overly long stretches at their quietest frame
-                while ((cut - start) > SAMPLE_RATE * MAX_SEGMENT_MS / 1000) {
-                    val limit = start + SAMPLE_RATE * 10
-                    val wanted = start + SAMPLE_RATE * (MAX_SEGMENT_MS - 3000) / 1000
-                    var best = wanted
-                    var bestRms = Float.MAX_VALUE
-                    var frame = (wanted / HOP)
-                    val lastFrame = min((cut - WINDOW) / HOP, frame + SAMPLE_RATE * 3000 / 1000 / HOP)
-                    while (frame < lastFrame && frame < rms.size) {
-                        if (rms[frame] < bestRms) {
-                            bestRms = rms[frame]
-                            best = frame * HOP
-                        }
-                        frame++
+    /**
+     * The Chinese model emits bare words with per-word timestamps and no punctuation at all.
+     * We rebuild sentences from the silence between words: long gaps end a sentence, medium
+     * gaps add a comma. Continuous narration has almost no silence, so a long clause also
+     * gets a comma as soon as a clause-opening word shows up.
+     */
+    private fun punctuate(words: List<Word>): String {
+        val output = StringBuilder()
+        val current = StringBuilder()
+        var previousEnd = words.first().end
+        words.forEachIndexed { index, word ->
+            if (index > 0) {
+                val gap = if (word.start >= 0 && previousEnd >= 0) word.start - previousEnd else 0.0
+                if (gap >= SENTENCE_GAP && current.isNotEmpty()) {
+                    output.append(current).append(endingMark(current.toString()))
+                    current.setLength(0)
+                } else if (gap >= CLAUSE_GAP && pendingLength(current) >= MIN_CLAUSE) {
+                    val mark = clauseMark(current.toString())
+                    if (mark == '，') {
+                        current.append('，')
+                    } else {
+                        output.append(current).append(mark)
+                        current.setLength(0)
                     }
-                    if (best <= start + limit) break
-                    segments.add(Segment(start, best, false))
-                    start = best
                 }
             }
-            if (cut > start) segments.add(Segment(start, cut, true))
-            from = cut
+            if (pendingLength(current) >= MAX_CLAUSE &&
+                !endsWithPunctuation(current) &&
+                clauseStarters.any { word.text.startsWith(it) }
+            ) {
+                current.append('，')
+            }
+            appendWord(current, word.text)
+            if (word.end >= 0) previousEnd = word.end
         }
-        return segments.filter { it.end - it.start > SAMPLE_RATE / 5 }
+        if (current.isNotEmpty()) {
+            output.append(current).append(endingMark(current.toString()))
+        }
+        return output.toString()
     }
 
-    /** Join decoded pieces and give the plain text some punctuation. */
-    private fun compose(pieces: List<String>): String {
-        val builder = StringBuilder()
-        pieces.forEachIndexed { index, piece ->
-            val clause = punctuate(piece)
-            if (clause.isEmpty()) return@forEachIndexed
-            if (index > 0 && builder.isNotEmpty()) {
-                builder.append(endingMark(builder.toString()))
-            }
-            builder.append(clause)
-        }
-        if (builder.isNotEmpty() && builder.last() !in "。？！，") {
-            builder.append(endingMark(builder.toString()))
-        }
-        return builder.toString()
-    }
-
-    /** Rule based commas for a chunk of unpunctuated Mandarin. */
-    private fun punctuate(text: String): String {
-        if (text.isEmpty()) return text
-        val builder = StringBuilder()
-        var sinceBreak = 0
-        var index = 0
-        while (index < text.length) {
-            val matched = breakBefore.firstOrNull { text.startsWith(it, index) && sinceBreak >= 6 }
-            if (matched != null && builder.isNotEmpty() && builder.last() !in "，。？！") {
-                builder.append('，')
-                sinceBreak = 0
-            }
-            val ch = text[index]
-            builder.append(ch)
-            sinceBreak++
-            if (sinceBreak >= MAX_CLAUSE && ch in softBreakChars && index + 1 < text.length) {
-                builder.append('，')
-                sinceBreak = 0
-            }
-            index++
-        }
-        return builder.toString().trim().trim(',', '，')
+    private fun clauseMark(sentence: String): Char = when {
+        endsQuestion(sentence) -> '？'
+        endsExclaim(sentence) -> '！'
+        else -> '，'
     }
 
     private fun endingMark(sentence: String): Char {
-        val trimmed = sentence.trimEnd('，')
-        if (trimmed.isEmpty()) return '。'
-        val tail = trimmed.takeLast(8)
-        if (questionTails.any { trimmed.endsWith(it) } || questionWords.any { tail.contains(it) }) return '？'
-        if (exclaimTails.any { trimmed.endsWith(it) } ||
-            (tail.contains("太") && trimmed.endsWith("了"))
-        ) return '！'
+        val tail = sentence.takeLast(8)
+        if (endsQuestion(sentence) || questionWords.any { tail.contains(it) }) return '？'
+        if (endsExclaim(sentence)) return '！'
         return '。'
+    }
+
+    private fun endsQuestion(sentence: String): Boolean =
+        questionTails.any { sentence.endsWith(it) }
+
+    private fun endsExclaim(sentence: String): Boolean =
+        exclaimTails.any { sentence.endsWith(it) } ||
+            (sentence.takeLast(8).contains("太") && sentence.endsWith("了"))
+
+    private fun endsWithPunctuation(builder: StringBuilder): Boolean =
+        builder.isNotEmpty() && builder.last() in "。？！，"
+
+    /** Characters typed since the last punctuation mark. */
+    private fun pendingLength(builder: StringBuilder): Int {
+        for (index in builder.length - 1 downTo 0) {
+            if (builder[index] in "。？！，") return builder.length - 1 - index
+        }
+        return builder.length
+    }
+    private fun appendWord(builder: StringBuilder, word: String) {
+        if (builder.isEmpty()) {
+            builder.append(word)
+            return
+        }
+        val previous = builder.last()
+        val next = word.first()
+        if (previous.code < 128 && next.code < 128 && !previous.isWhitespace()) {
+            builder.append(' ')
+        }
+        builder.append(word)
+    }
+    /** Moves [input] to the first byte of the WAV "data" payload and returns its size. */
+    private fun skipToWavData(input: InputStream): Long {
+        val header = ByteArray(12)
+        if (!readFully(input, header)) return -1L
+        val chunkHeader = ByteArray(8)
+        while (readFully(input, chunkHeader)) {
+            val id = String(chunkHeader, 0, 4, Charsets.US_ASCII)
+            val size = (chunkHeader[4].toLong() and 0xFF) or
+                ((chunkHeader[5].toLong() and 0xFF) shl 8) or
+                ((chunkHeader[6].toLong() and 0xFF) shl 16) or
+                ((chunkHeader[7].toLong() and 0xFF) shl 24)
+            if (id == "data") return if (size <= 0L) -1L else size
+            val skip = size + (size and 1L)
+            if (skip <= 0L) return -1L
+            if (!skipBytes(input, skip)) return -1L
+        }
+        return -1L
+    }
+
+    private fun readFully(input: InputStream, target: ByteArray): Boolean {
+        var offset = 0
+        while (offset < target.size) {
+            val read = input.read(target, offset, target.size - offset)
+            if (read < 0) return false
+            offset += read
+        }
+        return true
+    }
+
+    private fun skipBytes(input: InputStream, count: Long): Boolean {
+        var remaining = count
+        while (remaining > 0) {
+            val skipped = input.skip(remaining)
+            if (skipped > 0) {
+                remaining -= skipped
+            } else if (input.read() < 0) {
+                return false
+            } else {
+                remaining -= 1
+            }
+        }
+        return true
     }
 }
