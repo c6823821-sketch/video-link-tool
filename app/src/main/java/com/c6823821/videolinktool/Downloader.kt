@@ -6,19 +6,23 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * HTTP downloader.
  *
- * Big files are fetched over several range requests at once. A single connection to
- * a video CDN is often throttled per connection, so four connections usually finish
- * a Douyin video several times faster than one. If the server refuses ranges, or a
- * part fails, it falls back to a plain single stream download.
+ * Large files are pulled by a pool of connections that work through small byte
+ * ranges from a shared queue. A fixed split (one connection per quarter) meant a
+ * single slow connection held the whole download hostage — which is why the bar
+ * used to crawl through the last few percent. With small chunks the workers keep
+ * pulling new ranges until the queue is empty, so progress stays even.
  */
 object Downloader {
     private const val PARALLEL_MIN_BYTES = 3L * 1024 * 1024
-    private const val MAX_PARTS = 4
+    private const val WORKERS = 4
+    private const val CHUNK_TARGETS = 48
+    private const val MIN_CHUNK = 1L shl 20
 
     fun download(
         url: String,
@@ -62,22 +66,27 @@ object Downloader {
         total: Long,
         onProgress: (Int) -> Unit,
     ): Boolean {
-        val parts = minOf(MAX_PARTS, (total / (1024 * 1024)).toInt().coerceAtLeast(1))
-        if (parts <= 1) return false
-        val chunk = total / parts
-        val executor = Executors.newFixedThreadPool(parts)
-        val pieces = ArrayList<File>(parts)
+        val chunkSize = maxOf(MIN_CHUNK, total / CHUNK_TARGETS)
+        val chunkCount = ((total + chunkSize - 1) / chunkSize).toInt().coerceAtLeast(1)
+        val workers = minOf(WORKERS, chunkCount)
+        val nextChunk = AtomicInteger(0)
         val counter = AtomicLong(0)
+        val pieces = ArrayList<File>(chunkCount)
+        val executor = Executors.newFixedThreadPool(workers)
         try {
-            val futures = (0 until parts).map { index ->
-                val start = index * chunk
-                val end = if (index == parts - 1) total - 1 else start + chunk - 1
-                val piece = File(output.parentFile, output.name + ".part" + index)
-                pieces.add(piece)
+            val futures = (0 until workers).map {
                 executor.submit {
-                    fetchRange(url, headers, piece, start, end, mode) { added ->
-                        val done = counter.addAndGet(added)
-                        onProgress(((done * 100) / total).toInt().coerceIn(0, 100))
+                    while (true) {
+                        val index = nextChunk.getAndIncrement()
+                        if (index >= chunkCount) break
+                        val start = index * chunkSize
+                        val end = minOf(start + chunkSize - 1, total - 1)
+                        val piece = File(output.parentFile, output.name + ".part" + index)
+                        synchronized(pieces) { pieces.add(piece) }
+                        fetchRange(url, headers, piece, start, end, mode) { added ->
+                            val done = counter.addAndGet(added)
+                            onProgress(((done * 100) / total).toInt().coerceIn(0, 99))
+                        }
                     }
                 }
             }
@@ -90,13 +99,19 @@ object Downloader {
         }
 
         if (output.exists()) output.delete()
+        var complete = true
         BufferedOutputStream(FileOutputStream(output), 1 shl 20).use { target ->
-            pieces.forEach { piece ->
+            for (index in 0 until chunkCount) {
+                val piece = File(output.parentFile, output.name + ".part" + index)
+                if (!piece.exists()) {
+                    complete = false
+                    break
+                }
                 piece.inputStream().use { input -> input.copyTo(target, 1 shl 20) }
             }
         }
         pieces.forEach { it.delete() }
-        if (output.length() != total) {
+        if (!complete || output.length() != total) {
             output.delete()
             return false
         }

@@ -19,8 +19,8 @@ android {
         applicationId = "com.c6823821.videolinktool.v3"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "1.7.3"
+        versionCode = 30
+        versionName = "1.8.0"
 
         ndk {
             // Default build ships both ABIs. "-PabiFilter=arm64" builds the smaller

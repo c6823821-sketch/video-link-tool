@@ -254,10 +254,82 @@
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
-            <VideoView
-                android:id="@+id/videoPreview"
+            <FrameLayout
+                android:id="@+id/playerBox"
                 android:layout_width="match_parent"
-                android:layout_height="230dp" />
+                android:layout_height="280dp"
+                android:background="@android:color/black">
+
+                <com.c6823821.videolinktool.AspectVideoView
+                    android:id="@+id/videoPreview"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="center" />
+
+                <LinearLayout
+                    android:id="@+id/playerControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:background="#99000000"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:visibility="gone">
+
+                    <SeekBar
+                        android:id="@+id/seekBar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:progressTint="@color/brand"
+                        android:thumbTint="@color/brand" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnBack10"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp"
+                            android:backgroundTint="#33000000"
+                            android:minWidth="0dp"
+                            android:text="« 10秒"
+                            android:textAllCaps="false"
+                            android:textColor="@android:color/white"
+                            android:textSize="13sp" />
+
+                        <Button
+                            android:id="@+id/btnPlayPause"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:backgroundTint="@color/brand"
+                            android:minWidth="96dp"
+                            android:text="暂停"
+                            android:textAllCaps="false"
+                            android:textColor="@android:color/white"
+                            android:textSize="14sp" />
+
+                        <Button
+                            android:id="@+id/btnForward10"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp"
+                            android:backgroundTint="#33000000"
+                            android:minWidth="0dp"
+                            android:text="10秒 »"
+                            android:textAllCaps="false"
+                            android:textColor="@android:color/white"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </FrameLayout>
         </LinearLayout>
         <Button
             android:id="@+id/btnOpenResult"

@@ -29,6 +29,16 @@ class MainActivity : AppCompatActivity() {
     private var displayedState = TaskUiState()
     private var previewKey: String? = null
 
+    private var previewMedia: android.media.MediaPlayer? = null
+    private val hidePlayerControls = Runnable { binding.playerControls.visibility = android.view.View.GONE }
+    private val seekUpdater = object : Runnable {
+        override fun run() {
+            val player = previewMedia
+            if (player != null && player.isPlaying) binding.seekBar.progress = player.currentPosition
+            binding.seekBar.postDelayed(this, 500)
+        }
+    }
+
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
@@ -66,6 +76,41 @@ class MainActivity : AppCompatActivity() {
         binding.btnOpenResult.setOnClickListener { openResult() }
         binding.btnCopyResult.setOnClickListener { copyResultText() }
 
+        binding.btnPlayPause.setOnClickListener {
+            val player = previewMedia
+            when {
+                player == null -> {
+                    runCatching { binding.videoPreview.start() }
+                    binding.btnPlayPause.text = "暂停"
+                }
+                player.isPlaying -> {
+                    binding.videoPreview.pause()
+                    binding.btnPlayPause.text = "播放"
+                }
+                else -> {
+                    binding.videoPreview.start()
+                    binding.btnPlayPause.text = "暂停"
+                }
+            }
+            showPlayerControls()
+        }
+        binding.btnBack10.setOnClickListener { seekBy(-10000) }
+        binding.btnForward10.setOnClickListener { seekBy(10000) }
+        binding.seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
+                if (fromUser && (previewMedia?.duration ?: 0) > 0) binding.videoPreview.seekTo(value)
+            }
+            override fun onStartTrackingTouch(bar: android.widget.SeekBar?) = showPlayerControls()
+            override fun onStopTrackingTouch(bar: android.widget.SeekBar?) = showPlayerControls()
+        })
+        binding.videoPreview.setOnClickListener {
+            if (binding.playerControls.visibility == android.view.View.VISIBLE) {
+                binding.playerControls.visibility = android.view.View.GONE
+            } else {
+                showPlayerControls()
+            }
+        }
+
         binding.btnCheckUpdate.setOnClickListener { checkForUpdate(true) }
         checkForUpdate(false)
 
@@ -76,8 +121,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
 
+    }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
@@ -157,7 +202,9 @@ class MainActivity : AppCompatActivity() {
             if (binding.cardPreview.visibility == android.view.View.VISIBLE) {
                 runCatching { binding.videoPreview.stopPlayback() }
             }
+            previewMedia = null
             binding.cardPreview.visibility = android.view.View.GONE
+            binding.playerControls.visibility = android.view.View.GONE
             previewKey = null
             return
         }
@@ -173,13 +220,23 @@ class MainActivity : AppCompatActivity() {
             binding.cardPreview.visibility = android.view.View.GONE
             return
         }
-        val controller = android.widget.MediaController(this)
-        controller.setAnchorView(binding.videoPreview)
-        binding.videoPreview.setMediaController(controller)
         binding.videoPreview.setOnPreparedListener { player ->
+            previewMedia = player
             player.isLooping = false
-            binding.tvPreviewHint.text = "预览"
+            binding.videoPreview.applyVideoSize(player.videoWidth, player.videoHeight)
+            binding.seekBar.max = player.duration.coerceAtLeast(1)
+            binding.seekBar.progress = 0
+            binding.btnPlayPause.text = "暂停"
             runCatching { binding.videoPreview.start() }
+            showPlayerControls()
+            binding.seekBar.removeCallbacks(seekUpdater)
+            binding.seekBar.post(seekUpdater)
+        }
+        binding.videoPreview.setOnCompletionListener {
+            previewMedia = null
+            binding.btnPlayPause.text = "播放"
+            binding.seekBar.progress = binding.seekBar.max
+            showPlayerControls()
         }
         binding.videoPreview.setOnErrorListener { _, _, _ ->
             binding.cardPreview.visibility = android.view.View.GONE
@@ -188,6 +245,22 @@ class MainActivity : AppCompatActivity() {
         }
         binding.videoPreview.setVideoURI(uri)
     }
+
+    private fun showPlayerControls() {
+        binding.playerControls.visibility = android.view.View.VISIBLE
+        binding.playerControls.removeCallbacks(hidePlayerControls)
+        if (previewMedia?.isPlaying == true) binding.playerControls.postDelayed(hidePlayerControls, 4000)
+    }
+
+    private fun seekBy(deltaMs: Int) {
+        val player = previewMedia ?: return
+        val target = (binding.videoPreview.currentPosition + deltaMs)
+            .coerceIn(0, player.duration.coerceAtLeast(0))
+        binding.videoPreview.seekTo(target)
+        binding.seekBar.progress = target
+        showPlayerControls()
+    }
+
     private fun checkForUpdate(manual: Boolean) {
         lifecycleScope.launch(Dispatchers.IO) {
             val info = runCatching { UpdateManager.check(this@MainActivity) }.getOrNull()
@@ -270,6 +343,14 @@ class MainActivity : AppCompatActivity() {
             binding.tvStatus.text = "请先允许“安装未知应用”，返回后会自动继续"
         }
     }
+
+    override fun onDestroy() {
+        binding.seekBar.removeCallbacks(seekUpdater)
+        binding.playerControls.removeCallbacks(hidePlayerControls)
+        runCatching { binding.videoPreview.stopPlayback() }
+        super.onDestroy()
+    }
+
 
     override fun onResume() {
         super.onResume()
