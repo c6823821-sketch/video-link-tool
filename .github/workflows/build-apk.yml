@@ -1,4 +1,4 @@
-﻿name: Build Android APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -39,14 +39,35 @@ jobs:
           unzip -q -o /tmp/vosk-model-small-cn-0.3.zip -d app/src/main/assets/
           test -f app/src/main/assets/vosk-model-small-cn-0.3/final.mdl
 
-      - name: Build release APK
+      - name: Build universal release APK
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            cp app/build/outputs/apk/release/app-release.apk "VideoLinkTool-v${VERSION}.apk"
+            ./gradlew --no-daemon :app:assembleRelease -PabiFilter=arm64
+            cp app/build/outputs/apk/release/app-release.apk "VideoLinkTool-v${VERSION}-arm64.apk"
+          else
+            cp app/build/outputs/apk/release/app-release.apk "VideoLinkTool-release.apk"
+          fi
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: VideoLinkTool-release
-          path: app/build/outputs/apk/release/app-release.apk
+          path: |
+            VideoLinkTool-v*.apk
+            VideoLinkTool-release.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: VideoLinkTool-v*.apk
+          generate_release_notes: true

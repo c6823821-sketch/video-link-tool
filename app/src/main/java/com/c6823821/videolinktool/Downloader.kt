@@ -181,7 +181,7 @@ object Downloader {
                 }
             }
         }
-        if (!output.exists() || output.length() < 1024) {
+        if (!output.exists() || output.length() == 0L) {
             throw IllegalStateException("下载结果不完整")
         }
     }

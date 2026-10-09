@@ -156,14 +156,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateMode(mode: TaskMode) {
         currentMode = mode
         val hint = when (mode) {
-            TaskMode.VIDEO -> "只下载无水印视频源文件，不提取音频。"
-            TaskMode.AUDIO -> "只提取音频，不保存整段视频。"
+            TaskMode.VIDEO -> "下载无水印视频；图集会保存图片、实况视频和图集音频。"
+            TaskMode.AUDIO -> "只提取音频；支持普通视频和抖音图集/实况的背景音频。"
             TaskMode.TEXT -> "只输出文字，结果显示在下方框里，不自动保存。模型内置，不用下载。"
         }
         binding.tvModeHint.text = hint
         render(TaskBus.stateOf(mode))
         binding.btnRun.text = when (mode) {
-            TaskMode.VIDEO -> "开始下载视频"
+            TaskMode.VIDEO -> "开始下载视频/图集"
             TaskMode.AUDIO -> "开始提取音频"
             TaskMode.TEXT -> "开始转文字"
         }

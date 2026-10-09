@@ -19,8 +19,8 @@ android {
         applicationId = "com.c6823821.videolinktool.v3"
         minSdk = 26
         targetSdk = 34
-        versionCode = 30
-        versionName = "1.8.0"
+        versionCode = 31
+        versionName = "1.9.0"
 
         ndk {
             // Default build ships both ABIs. "-PabiFilter=arm64" builds the smaller
@@ -77,6 +77,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")

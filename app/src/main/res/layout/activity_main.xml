@@ -103,7 +103,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="只下载无水印视频源文件，不提取音频。"
+            android:text="下载无水印视频；图集会保存图片、实况视频和图集音频。"
             android:textColor="@color/muted"
             android:textSize="13sp" />
 
@@ -362,7 +362,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="抖音、快手、小红书支持视频和图集；B站、百度视频、今日头条支持视频。"
+                android:text="抖音支持视频、图集和实况；快手、小红书支持视频和图集。"
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
 

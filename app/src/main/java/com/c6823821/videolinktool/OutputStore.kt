@@ -13,6 +13,7 @@ object OutputStore {
     private const val GALLERY_FOLDER = "视频工具箱图集"
 
     data class Saved(val uri: Uri?, val path: String, val displayName: String)
+    data class GalleryFile(val displayName: String, val file: File)
 
     fun saveFile(context: Context, source: File, title: String, mime: String): Saved {
         val safeTitle = LinkExtractor.sanitizeTitle(title)
@@ -48,39 +49,57 @@ object OutputStore {
         }
     }
 
-    fun saveGallery(context: Context, files: List<File>, title: String): List<Saved> {
+    fun saveGallery(context: Context, files: List<GalleryFile>, title: String): List<Saved> {
         val safeTitle = LinkExtractor.sanitizeTitle(title)
         val saved = mutableListOf<Saved>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val relative = Environment.DIRECTORY_DOWNLOADS + "/" + GALLERY_FOLDER + "/" + safeTitle
-            files.forEachIndexed { index, source ->
-                val ext = source.extension.ifBlank { "jpg" }
-                val displayName = (index + 1).toString().padStart(2, '0') + "." + ext
+            files.forEach { item ->
                 val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, item.displayName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeOf(item.displayName))
                     put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
                 }
                 val resolver = context.contentResolver
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                     ?: throw IllegalStateException("无法创建图集文件")
                 resolver.openOutputStream(uri)?.use { output ->
-                    source.inputStream().use { input -> input.copyTo(output) }
+                    item.file.inputStream().use { input -> input.copyTo(output) }
                 } ?: throw IllegalStateException("无法写入图集文件")
-                saved += Saved(uri, uri.toString(), displayName)
+                saved += Saved(uri, uri.toString(), item.displayName)
             }
         } else {
             @Suppress("DEPRECATION")
             val root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val dir = File(root, GALLERY_FOLDER + "/" + safeTitle).apply { mkdirs() }
-            files.forEachIndexed { index, source ->
-                val ext = source.extension.ifBlank { "jpg" }
-                val target = File(dir, (index + 1).toString().padStart(2, '0') + "." + ext)
-                source.inputStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+            files.forEach { item ->
+                var target = File(dir, item.displayName)
+                var index = 1
+                while (target.exists()) {
+                    val stem = item.displayName.substringBeforeLast('.', item.displayName)
+                    val ext = item.displayName.substringAfterLast('.', "")
+                    val suffix = if (ext.isBlank()) "" else "." + ext
+                    target = File(dir, stem + "_" + index + suffix)
+                    index++
+                }
+                item.file.inputStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
                 saved += Saved(null, target.absolutePath, target.name)
             }
         }
         return saved
+    }
+
+    private fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "heic" -> "image/heic"
+        "avif" -> "image/avif"
+        "mp4" -> "video/mp4"
+        "mp3" -> "audio/mpeg"
+        "m4a" -> "audio/mp4"
+        "aac" -> "audio/aac"
+        else -> "image/jpeg"
     }
 
     fun saveText(context: Context, text: String, title: String): Saved {

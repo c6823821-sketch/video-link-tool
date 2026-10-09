@@ -3,6 +3,8 @@ package com.c6823821.videolinktool
 data class ImageItem(
     val url: String,
     val ext: String = "jpg",
+    val liveUrl: String = "",
+    val liveExt: String = "mp4",
 )
 
 data class DirectMedia(
@@ -13,6 +15,8 @@ data class DirectMedia(
     val site: String = "平台",
     val quality: String = "",
     val images: List<ImageItem> = emptyList(),
+    val audioUrl: String = "",
+    val audioExt: String = "mp3",
 )
 
 sealed class ResolvedSource {

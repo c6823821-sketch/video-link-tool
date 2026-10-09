@@ -4,7 +4,7 @@ import okhttp3.Request
 import org.json.JSONObject
 
 object KuaishouParser {
-    private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+    private val UA = HttpClient.MOBILE_UA
     private val initRegex = Regex("window\\.INIT_STATE\\s*=\\s*(\\{.*?\\})\\s*</script>", RegexOption.DOT_MATCHES_ALL)
 
     fun parse(url: String): DirectMedia {

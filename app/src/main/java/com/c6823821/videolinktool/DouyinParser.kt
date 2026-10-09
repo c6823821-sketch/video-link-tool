@@ -41,35 +41,101 @@ object DouyinParser {
         throw IllegalStateException(lastError)
     }
 
+    internal fun buildForTest(detail: JSONObject): DirectMedia = build(detail)
+
     private fun build(detail: JSONObject): DirectMedia {
         val title = detail.optString("desc").ifBlank { "抖音作品" }
-        val images = mutableListOf<ImageItem>()
-        val imageArray = detail.optJSONArray("images")
-        if (imageArray != null) {
-            for (i in 0 until imageArray.length()) {
-                val item = imageArray.optJSONObject(i) ?: continue
-                val url = chooseImage(item.optJSONArray("url_list"))
-                if (url.isNotBlank()) images += ImageItem(url)
-            }
-        }
+        val images = galleryItems(detail).mapNotNull(::buildGalleryItem)
         val video = chooseVideo(detail.optJSONObject("video"))
+        val audioUrl = chooseAudio(detail)
+        val headers = mapOf("Referer" to "https://www.douyin.com/", "User-Agent" to UA)
+
         if (images.isNotEmpty()) {
             return DirectMedia(
                 title = title,
-                headers = mapOf("Referer" to "https://www.douyin.com/", "User-Agent" to UA),
+                url = video.second,
+                headers = headers,
                 site = "抖音",
                 quality = "图集",
                 images = images,
+                audioUrl = audioUrl,
+                audioExt = extensionFromUrl(audioUrl, "mp3"),
             )
         }
         if (video.second.isBlank()) throw IllegalStateException("抖音作品没有可下载资源")
         return DirectMedia(
             title = title,
             url = video.second,
-            headers = mapOf("Referer" to "https://www.douyin.com/", "User-Agent" to UA),
+            headers = headers,
             site = "抖音",
             quality = video.first,
+            audioUrl = audioUrl,
+            audioExt = extensionFromUrl(audioUrl, "mp3"),
         )
+    }
+
+    private fun galleryItems(detail: JSONObject): List<JSONObject> {
+        val items = mutableListOf<JSONObject>()
+        fun addArray(array: JSONArray?) {
+            if (array == null) return
+            for (i in 0 until array.length()) {
+                array.optJSONObject(i)?.let(items::add)
+            }
+        }
+
+        val imagePost = detail.optJSONObject("image_post_info")
+        if (imagePost != null) {
+            addArray(imagePost.optJSONArray("images"))
+            addArray(imagePost.optJSONArray("image_list"))
+        }
+        addArray(detail.optJSONArray("images"))
+        addArray(detail.optJSONArray("image_list"))
+        return items
+    }
+
+    private fun buildGalleryItem(item: JSONObject): ImageItem? {
+        val imageUrl = chooseGalleryImage(item)
+        val liveUrl = chooseLiveVideo(item)
+        if (imageUrl.isBlank() && liveUrl.isBlank()) return null
+        return ImageItem(
+            url = imageUrl,
+            ext = extensionFromUrl(imageUrl, "jpg"),
+            liveUrl = liveUrl,
+            liveExt = "mp4",
+        )
+    }
+
+    private fun chooseGalleryImage(item: JSONObject): String {
+        val candidates = listOf<Any?>(
+            item.optJSONArray("watermark_free_download_url_list"),
+            item.optJSONObject("origin_image"),
+            item.optJSONObject("display_image"),
+            item.optJSONArray("url_list"),
+            item.optJSONObject("download_url"),
+            item.optJSONObject("download_addr"),
+            item.optJSONArray("download_url_list"),
+            item.optString("url").takeIf { it.isNotBlank() },
+            item.optJSONObject("owner_watermark_image"),
+        )
+        return candidates.asSequence().map(::firstUrl).firstOrNull { it.isNotBlank() }.orEmpty()
+    }
+
+    private fun chooseLiveVideo(item: JSONObject): String {
+        val chosen = chooseVideo(item.optJSONObject("video")).second
+        if (chosen.isNotBlank()) return chosen
+        return firstUrl(item.opt("video_play_addr"))
+            .ifBlank { firstUrl(item.opt("video_download_addr")) }
+    }
+
+    private fun chooseAudio(detail: JSONObject): String {
+        val imagePost = detail.optJSONObject("image_post_info")
+        val candidates = listOf<Any?>(
+            detail.optJSONObject("music")?.optJSONObject("play_url"),
+            imagePost?.optJSONObject("music")?.optJSONObject("play_url"),
+            detail.optJSONObject("images_music")?.optJSONObject("play_url"),
+            detail.optJSONObject("video")?.optJSONObject("audio")?.optJSONObject("play_addr"),
+        )
+        return candidates.asSequence().map(::firstUrl).firstOrNull { it.isNotBlank() }.orEmpty()
     }
 
     private fun chooseVideo(video: JSONObject?): Pair<String, String> {
@@ -81,22 +147,18 @@ object DouyinParser {
             for (i in 0 until bitRates.length()) {
                 val item = bitRates.optJSONObject(i) ?: continue
                 val play = item.optJSONObject("play_addr") ?: continue
-                var url = play.optJSONArray("url_list")?.optString(0).orEmpty().replace("playwm", "play")
+                val url = firstUrl(play).replace("playwm", "play")
                 if (url.isBlank()) continue
                 val width = play.optLong("width")
                 val height = play.optLong("height")
                 val quality = if (height > 0) height.toString() + "P" else item.optString("gear_name")
-                // Douyin labels the better renditions as H.265. Skipping them threw away the
-                // whole 720p tier, which is why downloads fell back to a smaller-but-worse 576P file.
                 val hevc = item.optInt("is_h265", 0) == 1
                 candidates += Candidate(url, width * height, item.optLong("bit_rate"), quality, hevc)
             }
         }
         val fallback = video.optJSONObject("play_addr_h264") ?: video.optJSONObject("play_addr")
-        var fallbackUrl = fallback?.optJSONArray("url_list")?.optString(0).orEmpty().replace("playwm", "play")
+        val fallbackUrl = firstUrl(fallback).replace("playwm", "play")
         val fallbackHeight = fallback?.optLong("height") ?: 0
-        // The bit_rate list sometimes only carries the lower gears for anonymous
-        // requests, so treat the top level play address as a candidate as well.
         if (fallbackUrl.isNotBlank()) {
             val width = fallback?.optLong("width") ?: 0
             candidates += Candidate(
@@ -110,7 +172,6 @@ object DouyinParser {
         if (candidates.isEmpty() && fallbackUrl.isNotBlank()) {
             return (if (fallbackHeight > 0) fallbackHeight.toString() + "P" else "原画") to fallbackUrl
         }
-        // highest resolution wins; at the same resolution prefer H.264 for widest playback support
         val best = candidates.maxWithOrNull(
             compareBy<Candidate> { it.pixels }
                 .thenBy { if (it.hevc) 0 else 1 }
@@ -119,23 +180,44 @@ object DouyinParser {
         return if (best != null) best.quality.ifBlank { "原画" } to best.url else "" to fallbackUrl
     }
 
-    private fun chooseImage(urlList: JSONArray?): String {
-        if (urlList == null) return ""
-        var fallback = ""
-        for (i in 0 until urlList.length()) {
-            val url = urlList.optString(i)
-            if (url.isBlank()) continue
-            if (fallback.isBlank()) fallback = url
-            if (!url.contains(".webp", ignoreCase = true)) return url
+    private fun firstUrl(value: Any?): String = when (value) {
+        is String -> value.trim().takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }.orEmpty()
+        is JSONArray -> {
+            var found = ""
+            for (i in 0 until value.length()) {
+                found = firstUrl(value.opt(i))
+                if (found.isNotBlank()) break
+            }
+            found
         }
-        return fallback
+        is JSONObject -> {
+            val direct = value.optString("url").trim()
+            if (direct.startsWith("http://", true) || direct.startsWith("https://", true)) {
+                direct
+            } else {
+                firstUrl(value.optJSONArray("url_list"))
+            }
+        }
+        else -> ""
+    }
+
+    private fun extensionFromUrl(url: String, fallback: String): String {
+        if (url.isBlank()) return fallback
+        val clean = url.substringBefore('?').substringBefore('#').lowercase()
+        val match = Regex("\\.(jpe?g|png|webp|gif|heic|avif|mp3|m4a|aac|mp4)(?=~|\\.image|[^a-z0-9]|$)", RegexOption.IGNORE_CASE)
+            .find(clean)
+        val ext = match?.groupValues?.getOrNull(1).orEmpty().lowercase()
+        return when (ext) {
+            "jpeg" -> "jpg"
+            "m4a" -> "m4a"
+            else -> ext.ifBlank { fallback }
+        }
     }
 
     private fun extractAwemeId(url: String): String? {
-        val uri = Uri.parse(url)
-        val modal = uri.getQueryParameter("modal_id")
+        val modal = Regex("[?&]modal_id=(\\d{12,})").find(url)?.groupValues?.getOrNull(1)
         if (!modal.isNullOrBlank()) return modal
-        return uri.pathSegments?.reversed()?.firstOrNull { it.matches(Regex("\\d{12,}")) }
+        return Regex("/(?:video|note)/(\\d{12,})").find(url)?.groupValues?.getOrNull(1)
     }
 
     private fun getTtwid(): String? {
