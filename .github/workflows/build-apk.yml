@@ -39,6 +39,21 @@ jobs:
           unzip -q -o /tmp/vosk-model-small-cn-0.3.zip -d app/src/main/assets/
           test -f app/src/main/assets/vosk-model-small-cn-0.3/final.mdl
 
+      - name: Restore Android signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p keystore
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore/videolinktool-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=keystore/videolinktool-release.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
       - name: Build universal release APK
         run: |
           chmod +x gradlew
@@ -56,6 +71,12 @@ jobs:
             cp app/build/outputs/apk/release/app-release.apk "VideoLinkTool-release.apk"
           fi
 
+      - name: Verify release signing certificate
+        run: |
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner"
+          APK=$(ls VideoLinkTool-v*.apk VideoLinkTool-release.apk 2>/dev/null | head -n 1)
+          CERT=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/.*SHA-256 digest: //p' | head -n 1)
+          test "$CERT" = "6abd42e63859ea6095d76e1a123d3307b067d524915cf03036a8b04e10b8f81e"
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
