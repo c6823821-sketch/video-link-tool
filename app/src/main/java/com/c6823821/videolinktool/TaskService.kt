@@ -47,7 +47,9 @@ class TaskService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        runCatching { YoutubeDlEngine.init(this) }
+        // startForegroundService 只给 5 秒。这里必须先进入前台，
+        // 再初始化耗时的 yt-dlp/Python 原生运行时，否则所有任务都会被系统判 ANR。
+        startForegroundCompat(TaskMode.VIDEO, "正在准备任务...", 0)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -69,6 +71,7 @@ class TaskService : Service() {
         val job = scope.launch {
             val alive = { counter.get() == token && !TaskControl.isCancelled(mode) }
             try {
+                runCatching { YoutubeDlEngine.init(this@TaskService) }
                 if (alive()) TaskBus.update(mode, RunState.RUNNING, 0, "开始处理", "正在解析链接...")
                 TaskRunner.run(this@TaskService, mode, input) { progress, detail ->
                     if (alive()) {

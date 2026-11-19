@@ -81,6 +81,7 @@ app/build/outputs/apk/release/app-release.apk
 
 ## 最近修复
 
+- v1.10.1：修复 `TaskService` 在调用 `startForeground()` 前同步初始化 yt-dlp/Python，导致点开始后 5 秒触发前台服务超时、App 被系统杀死的问题。
 - v1.10.0：界面明确列出好看视频，并扩展腾讯视频、爱奇艺、优酷、芒果TV、微博、YouTube 等平台识别。
 - v1.10.0：好看视频增加网页 `playurl` 兜底，接口改版或单个视频从接口下线时仍可尝试解析。
 - v1.9.0：修复快手分享短链被识别成 PC 页面后缺少 INIT_STATE 的问题，改用移动端页面解析。
