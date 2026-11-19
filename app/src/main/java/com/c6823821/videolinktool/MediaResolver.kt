@@ -19,8 +19,22 @@ object MediaResolver {
             host.contains("bilibili") ->
                 runCatching { ResolvedSource.Direct(BilibiliParser.parse(finalUrl)) }
                     .getOrElse { ResolvedSource.YoutubeDl(site = "哔哩哔哩") }
-            host.contains("toutiao") || host.contains("ixigua") ->
+            host.contains("ixigua") ->
+                ResolvedSource.YoutubeDl(site = "西瓜视频")
+            host.contains("toutiao") ->
                 ResolvedSource.YoutubeDl(site = "今日头条")
+            host.contains("v.qq.com") ->
+                ResolvedSource.YoutubeDl(site = "腾讯视频")
+            host.contains("iqiyi") ->
+                ResolvedSource.YoutubeDl(site = "爱奇艺")
+            host.contains("youku") ->
+                ResolvedSource.YoutubeDl(site = "优酷")
+            host.contains("mgtv") ->
+                ResolvedSource.YoutubeDl(site = "芒果TV")
+            host.contains("weibo") ->
+                ResolvedSource.YoutubeDl(site = "微博")
+            host.contains("youtube") || host.contains("youtu.be") ->
+                ResolvedSource.YoutubeDl(site = "YouTube")
             else -> ResolvedSource.YoutubeDl()
         }
     }

@@ -1,6 +1,7 @@
 package com.c6823821.videolinktool
 
 import okhttp3.Request
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -37,6 +38,27 @@ class LiveNetworkParserTest {
             .url(media.url)
             .header("User-Agent", media.headers["User-Agent"] ?: HttpClient.MOBILE_UA)
             .header("Referer", media.headers["Referer"] ?: "https://www.douyin.com/")
+            .header("Range", "bytes=0-65535")
+            .get()
+            .build()
+        HttpClient.client.newCall(request).execute().use { response ->
+            assertTrue(response.isSuccessful)
+            val read = response.body?.byteStream()?.read(ByteArray(65536)) ?: -1
+            assertTrue(read > 0)
+        }
+    }
+
+    @Test
+    fun haokanVideoParsesAndDownloads() {
+        assumeTrue(System.getenv("VIDEO_LINK_LIVE_TEST") == "1")
+        val media = BaiduParser.parse("https://haokan.baidu.com/v?vid=7869496855719176889")
+        assertTrue(media.url.startsWith("http"))
+        assertEquals("好看视频", media.site)
+
+        val request = Request.Builder()
+            .url(media.url)
+            .header("User-Agent", HttpClient.MOBILE_UA)
+            .header("Referer", media.headers["Referer"] ?: "https://haokan.baidu.com/")
             .header("Range", "bytes=0-65535")
             .get()
             .build()

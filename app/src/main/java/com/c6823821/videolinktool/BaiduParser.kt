@@ -46,8 +46,19 @@ object BaiduParser {
         val vid = Regex("[?&]vid=([^&]+)").find(rawUrl)?.groupValues?.getOrNull(1)
             ?: throw IllegalStateException("好看视频链接缺少 vid")
         val api = "https://haokan.baidu.com/v?_format=json&vid=$vid"
-        val page = PageFetcher.fetch(api, referer = "https://haokan.baidu.com/")
-        val root = JSONObject(page.html)
+        val apiMedia = runCatching {
+            val page = PageFetcher.fetch(api, referer = "https://haokan.baidu.com/")
+            parseHaokanApi(page.html)
+        }.getOrNull()
+        if (apiMedia != null) return apiMedia
+
+        // 接口改版或视频从接口下线时，直接从分享页的 playurl 字段兜底。
+        val page = PageFetcher.fetch(rawUrl, referer = "https://haokan.baidu.com/")
+        return parseHaokanHtml(page.html)
+    }
+
+    private fun parseHaokanApi(json: String): DirectMedia {
+        val root = JSONObject(json)
         val meta = root.optJSONObject("data")
             ?.optJSONObject("apiData")
             ?.optJSONObject("curVideoMeta")
@@ -75,8 +86,28 @@ object BaiduParser {
             title = title,
             url = bestUrl,
             headers = mapOf("Referer" to "https://haokan.baidu.com/"),
-            site = "百度好看视频",
+            site = "好看视频",
             quality = bestLabel.ifBlank { "原画" },
+        )
+    }
+
+    internal fun parseHaokanHtml(html: String): DirectMedia {
+        val title = JsonText.first(
+            Regex("\"title\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])+)\""),
+            html,
+        ).orEmpty().ifBlank { "好看视频" }
+        val playUrl = JsonText.first(
+            Regex("\"playurl\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])+)\""),
+            html,
+        ).orEmpty()
+        if (playUrl.isBlank()) throw IllegalStateException("好看视频页面里没有可用播放地址")
+
+        return DirectMedia(
+            title = title,
+            url = playUrl,
+            headers = mapOf("Referer" to "https://haokan.baidu.com/"),
+            site = "好看视频",
+            quality = "原画",
         )
     }
 }

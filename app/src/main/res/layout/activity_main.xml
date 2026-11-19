@@ -362,7 +362,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="抖音支持视频、图集和实况；快手、小红书支持视频和图集。"
+                android:text="抖音支持视频、图集和实况；快手、小红书支持视频和图集。QQ 浏览器、夸克中复制到的底层视频链接可直接粘贴；夸克网盘分享不属于视频解析。"
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
 

@@ -35,7 +35,7 @@ object PageFetcher {
 }
 
 object JsonText {
-    private val unicodeRegex = Regex("\\u([0-9a-fA-F]{4})")
+    private val unicodeRegex = Regex("\\\\u([0-9a-fA-F]{4})")
 
     fun decode(value: String): String {
         var text = value
